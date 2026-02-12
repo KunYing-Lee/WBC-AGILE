@@ -25,6 +25,7 @@ RUN ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install --no-cache-dir \
     tensordict==0.8.3 \
     datasets==2.19.0 \
     wandb==0.22.2 \
+    mujoco \
     importlib_metadata \
     orjson \
     pandas \

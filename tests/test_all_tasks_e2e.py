@@ -387,7 +387,7 @@ class TestAllTasks(unittest.TestCase):
             subprocess.run(
                 cmd,
                 check=True,
-                timeout=120,
+                timeout=600,  # 10 minutes: camera/video init adds overhead
                 capture_output=True,
                 text=True,
                 env=env,
