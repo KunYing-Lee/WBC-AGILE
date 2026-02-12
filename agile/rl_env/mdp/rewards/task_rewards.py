@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
 import torch
 
 from isaaclab.assets import RigidObject
@@ -24,6 +23,55 @@ from isaaclab.utils.math import quat_apply_inverse, yaw_quat
 
 from agile.rl_env.mdp.commands import UniformVelocityBaseHeightCommand
 from agile.rl_env.mdp.utils import get_contact_sensor_cfg, get_robot_cfg
+
+
+def nominal_posture_at_end_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    progress_threshold: float = 0.8,
+) -> torch.Tensor:
+    """Reward the robot for reaching the final frame's joint posture at the end of trajectory.
+
+    This reward encourages the robot to match the joint positions from the last frame
+    of the reference trajectory. The reward is gated by trajectory progress and uses
+    an exponential kernel on the deviation from the target final pose.
+
+    Args:
+        env: The environment.
+        command_name: Name of the tracking command term.
+        std: Standard deviation for exponential kernel on joint position deviation.
+        progress_threshold: Trajectory progress above which to start rewarding target posture.
+            Default 0.8 = last 20% of trajectory.
+
+    Returns:
+        Reward tensor: exp kernel on joint deviation from final frame target, gated by progress.
+    """
+    command = env.command_manager.get_term(command_name)
+    robot = env.scene[command.cfg.asset_name]
+
+    # Compute trajectory progress [0, 1]
+    progress = command.timestep_counter.float() / max(command.num_timesteps - 1, 1)
+    progress = torch.clamp(progress, 0.0, 1.0)
+
+    # Compute progress-based gate: ramps from 0 at threshold to 1 at progress=1.0
+    gate = (progress - progress_threshold) / (1.0 - progress_threshold)
+    gate = torch.clamp(gate, 0.0, 1.0)
+
+    # Get target joint positions from the last frame of the reference trajectory
+    # Shape: (num_tracked_joints,)
+    target_pos = command.target_tracked_joint_pos[-1]
+
+    # Get robot's current joint positions for the tracked joints
+    # Shape: (num_envs, num_tracked_joints)
+    current_pos = robot.data.joint_pos[:, command.tracked_joint_ids]
+
+    # Compute deviation from target posture
+    deviation_sq = torch.sum(torch.square(current_pos - target_pos), dim=-1)
+    posture_reward = torch.exp(-deviation_sq / (std**2))
+
+    # Apply progress-based gate
+    return posture_reward * gate
 
 
 def static_at_goal_exp(
@@ -95,55 +143,6 @@ def static_at_goal_exp(
 
     # Apply progress-based gate
     return static_reward * gate
-
-
-def nominal_posture_at_end_exp(
-    env: ManagerBasedRLEnv,
-    command_name: str,
-    std: float,
-    progress_threshold: float = 0.8,
-) -> torch.Tensor:
-    """Reward the robot for reaching the final frame's joint posture at the end of trajectory.
-
-    This reward encourages the robot to match the joint positions from the last frame
-    of the reference trajectory. The reward is gated by trajectory progress and uses
-    an exponential kernel on the deviation from the target final pose.
-
-    Args:
-        env: The environment.
-        command_name: Name of the tracking command term.
-        std: Standard deviation for exponential kernel on joint position deviation.
-        progress_threshold: Trajectory progress above which to start rewarding target posture.
-            Default 0.8 = last 20% of trajectory.
-
-    Returns:
-        Reward tensor: exp kernel on joint deviation from final frame target, gated by progress.
-    """
-    command = env.command_manager.get_term(command_name)
-    robot = env.scene[command.cfg.asset_name]
-
-    # Compute trajectory progress [0, 1]
-    progress = command.timestep_counter.float() / max(command.num_timesteps - 1, 1)
-    progress = torch.clamp(progress, 0.0, 1.0)
-
-    # Compute progress-based gate: ramps from 0 at threshold to 1 at progress=1.0
-    gate = (progress - progress_threshold) / (1.0 - progress_threshold)
-    gate = torch.clamp(gate, 0.0, 1.0)
-
-    # Get target joint positions from the last frame of the reference trajectory
-    # Shape: (num_tracked_joints,)
-    target_pos = command.target_tracked_joint_pos[-1]
-
-    # Get robot's current joint positions for the tracked joints
-    # Shape: (num_envs, num_tracked_joints)
-    current_pos = robot.data.joint_pos[:, command.tracked_joint_ids]
-
-    # Compute deviation from target posture
-    deviation_sq = torch.sum(torch.square(current_pos - target_pos), dim=-1)
-    posture_reward = torch.exp(-deviation_sq / (std**2))
-
-    # Apply progress-based gate
-    return posture_reward * gate
 
 
 # Note: The command gets updated after the reward is computed resulting in a one-step reward delay.
