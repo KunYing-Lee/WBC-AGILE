@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+import isaaclab.utils.math as math_utils
 from isaaclab.assets.articulation import Articulation
 from isaaclab.managers.action_manager import ActionTerm
 from isaaclab.sensors import RayCaster
@@ -133,14 +134,14 @@ class LiftAction(ActionTerm):
         )
         target_height = ratio * self.cfg.target_height
 
-        # find the error in local frame of root
-        forces = torch.zeros_like(self._asset.data.root_lin_vel_b)
+        # Compute desired force in world frame (+z = up).
+        forces_w = torch.zeros_like(self._asset.data.root_lin_vel_w)
         # calculate the height error
         height_error = target_height - height  # (N, 1)
         # apply the height error to the forces
-        forces[:, 2] = self.stiffness_forces * height_error
+        forces_w[:, 2] = self.stiffness_forces * height_error
         # limit the forces
-        forces = torch.clamp(forces, 0.0, self._force_limit).unsqueeze(1)
+        forces_w = torch.clamp(forces_w, 0.0, self._force_limit)
 
         # Angular velocity damping (D term) - only on z-axis (yaw) in world frame
         # This prevents fast spinning while allowing roll/pitch for balance
@@ -152,9 +153,18 @@ class LiftAction(ActionTerm):
             # Clamp torques
             torques_w[:, 2] = torch.clamp(torques_w[:, 2], -self._torque_limit, self._torque_limit)
 
-        # Apply forces and torques in world frame
+        # Convert world-frame wrench to lift-link local frame before applying.
+        # This avoids toggling the articulation's external wrench frame when
+        # other terms apply local-frame wrenches in the same step.
+        lift_link_quat_w = self._asset.data.body_quat_w[:, self._lift_link_id].squeeze(1)
+        forces_local = math_utils.quat_apply_inverse(lift_link_quat_w, forces_w)
+        torques_local = math_utils.quat_apply_inverse(lift_link_quat_w, torques_w)
+
         self._asset.set_external_force_and_torque(
-            forces=forces, torques=torques_w.unsqueeze(1), body_ids=self._lift_link_id, is_global=True
+            forces=forces_local.unsqueeze(1),
+            torques=torques_local.unsqueeze(1),
+            body_ids=self._lift_link_id,
+            is_global=False,
         )
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
