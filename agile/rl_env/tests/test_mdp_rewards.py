@@ -313,5 +313,106 @@ class TestContactForcesL2(TestRewardsBase):
         torch.testing.assert_close(result, expected)
 
 
+@unittest.skipIf(not APP_IS_READY, "App is not ready")
+class TestFeetSideOrderIfStanding(TestRewardsBase):
+    """Test cases for the feet_side_order_if_standing reward function."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.robot.data.body_pos_w = torch.tensor(
+            [
+                [[0.0, 0.10, 0.0], [0.0, -0.10, 0.0]],  # correct ordering
+                [[0.0, -0.10, 0.0], [0.0, 0.10, 0.0]],  # crossed ordering
+            ],
+            device=self.device,
+        )
+
+    def test_feet_side_order_if_standing(self) -> None:
+        feet_cfg = SceneEntityCfg("robot", body_names=["left_foot", "right_foot"])
+        feet_cfg.body_ids = torch.tensor([0, 1], device=self.device)
+
+        with patch("agile.rl_env.mdp.rewards.aestetic_rewards.transform_to_asset_frame", side_effect=lambda x, _: x):
+            penalty = mdp.feet_side_order_if_standing(
+                self.env,
+                standing_height_threshold=0.5,
+                feet_asset_cfg=feet_cfg,
+                margin=0.02,
+                norm="l1",
+            )
+
+        expected = torch.tensor([0.0, 0.22], device=self.device)
+        torch.testing.assert_close(penalty, expected)
+
+
+@unittest.skipIf(not APP_IS_READY, "App is not ready")
+class TestFeetForeAftAlignmentIfStanding(TestRewardsBase):
+    """Test cases for the feet_fore_aft_alignment_if_standing reward function."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.robot.data.body_pos_w = torch.tensor(
+            [
+                [[0.00, 0.10, 0.0], [0.02, -0.10, 0.0]],  # within tolerance
+                [[0.00, 0.10, 0.0], [0.25, -0.10, 0.0]],  # split stance
+            ],
+            device=self.device,
+        )
+
+    def test_feet_fore_aft_alignment_if_standing(self) -> None:
+        feet_cfg = SceneEntityCfg("robot", body_names=["left_foot", "right_foot"])
+        feet_cfg.body_ids = torch.tensor([0, 1], device=self.device)
+
+        with patch("agile.rl_env.mdp.rewards.aestetic_rewards.transform_to_asset_frame", side_effect=lambda x, _: x):
+            penalty = mdp.feet_fore_aft_alignment_if_standing(
+                self.env,
+                standing_height_threshold=0.5,
+                feet_asset_cfg=feet_cfg,
+                tolerance=0.04,
+                norm="l1",
+            )
+
+        expected = torch.tensor([0.0, 0.21], device=self.device)
+        torch.testing.assert_close(penalty, expected)
+
+
+@unittest.skipIf(not APP_IS_READY, "App is not ready")
+class TestBodyYawAlignmentIfStanding(TestRewardsBase):
+    """Test cases for the body_yaw_alignment_if_standing reward function."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.robot.data.body_quat_w = torch.tensor(
+            [
+                [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                ],
+                [
+                    [0.70710678, 0.0, 0.0, 0.70710678],
+                    [1.0, 0.0, 0.0, 0.0],
+                ],
+            ],
+            device=self.device,
+        )
+
+    def test_body_yaw_alignment_if_standing(self) -> None:
+        source_cfg = SceneEntityCfg("robot", body_names=["Trunk"])
+        source_cfg.body_ids = torch.tensor([0], device=self.device)
+        target_cfg = SceneEntityCfg("robot", body_names=["Waist"])
+        target_cfg.body_ids = torch.tensor([1], device=self.device)
+
+        penalty = mdp.body_yaw_alignment_if_standing(
+            self.env,
+            standing_height_threshold=0.5,
+            source_body_cfg=source_cfg,
+            target_body_cfg=target_cfg,
+            tolerance=0.1,
+            norm="l1",
+        )
+
+        expected = torch.tensor([0.0, torch.pi / 2 - 0.1], device=self.device)
+        torch.testing.assert_close(penalty, expected)
+
+
 if __name__ == "__main__":
     unittest.main()

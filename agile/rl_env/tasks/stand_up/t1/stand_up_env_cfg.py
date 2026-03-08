@@ -322,8 +322,42 @@ class RewardsCfg:
         weight=-5.0,
         params={
             "feet_asset_cfg": SceneEntityCfg("robot", body_names=".*foot_link.*"),
-            "base_body_cfg": SceneEntityCfg("robot", body_names="Waist"),
+            "base_body_cfg": SceneEntityCfg("robot", body_names=["Trunk"]),
             "standing_height_threshold": booster_t1.DEFAULT_TRUNK_HEIGHT * 0.8,
+        },
+    )
+
+    trunk_waist_yaw_alignment = RewTerm(
+        func=mdp.body_yaw_alignment_if_standing,
+        weight=-40.0,
+        params={
+            "source_body_cfg": SceneEntityCfg("robot", body_names=["Trunk"]),
+            "target_body_cfg": SceneEntityCfg("robot", body_names=["Waist"]),
+            "standing_height_threshold": booster_t1.DEFAULT_TRUNK_HEIGHT * 0.8,
+            "tolerance": 0.1,
+            "norm": "l1",
+        },
+    )
+
+    feet_side_order = RewTerm(
+        func=mdp.feet_side_order_if_standing,
+        weight=-200.0,
+        params={
+            "feet_asset_cfg": SceneEntityCfg("robot", body_names=".*foot_link.*"),
+            "standing_height_threshold": booster_t1.DEFAULT_TRUNK_HEIGHT * 0.8,
+            "margin": 0.02,
+            "norm": "l1",
+        },
+    )
+
+    feet_fore_aft_alignment = RewTerm(
+        func=mdp.feet_fore_aft_alignment_if_standing,
+        weight=-100.0,
+        params={
+            "feet_asset_cfg": SceneEntityCfg("robot", body_names=".*foot_link.*"),
+            "standing_height_threshold": booster_t1.DEFAULT_TRUNK_HEIGHT * 0.8,
+            "tolerance": 0.04,
+            "norm": "l1",
         },
     )
 

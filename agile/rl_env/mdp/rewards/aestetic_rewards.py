@@ -372,6 +372,48 @@ def feet_yaw_mean_vs_base_if_standing(
     return angle_error_squared * is_standing
 
 
+def body_yaw_alignment_if_standing(
+    env: ManagerBasedRLEnv,
+    standing_height_threshold: float,
+    source_body_cfg: SceneEntityCfg,
+    target_body_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    sensor_cfg: SceneEntityCfg | None = None,
+    tolerance: float = 0.0,
+    norm: Literal["l1", "l2"] = "l1",
+) -> torch.Tensor:
+    """Penalize yaw misalignment between two bodies once the robot is standing.
+
+    This is useful for suppressing solutions where the upper body twists relative
+    to the pelvis/legs while still satisfying height and flatness rewards.
+    """
+    asset: Articulation = env.scene[source_body_cfg.name]
+
+    if len(source_body_cfg.body_ids) != 1:
+        raise ValueError("Only one source body is supported for body_yaw_alignment_if_standing reward.")
+
+    if len(target_body_cfg.body_ids) != 1:
+        raise ValueError("Only one target body is supported for body_yaw_alignment_if_standing reward.")
+
+    source_quat = asset.data.body_quat_w[:, source_body_cfg.body_ids].squeeze(1)
+    target_quat = asset.data.body_quat_w[:, target_body_cfg.body_ids].squeeze(1)
+
+    relative_quat = math_utils.quat_mul(math_utils.quat_inv(target_quat), source_quat)
+    _, _, relative_yaw = math_utils.euler_xyz_from_quat(relative_quat)
+
+    yaw_error = torch.clamp(torch.abs(relative_yaw) - tolerance, min=0.0)
+
+    if norm == "l1":
+        penalty = yaw_error
+    elif norm == "l2":
+        penalty = torch.square(yaw_error)
+    else:
+        raise ValueError(f"Invalid norm: {norm}. Must be 'l1' or 'l2'.")
+
+    is_standing = if_standing(env, standing_height_threshold, asset_cfg, sensor_cfg)
+    return penalty * is_standing
+
+
 def feet_distance_from_ref(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -445,6 +487,75 @@ def feet_distance_from_ref_if_standing(
     )
     is_standing = if_standing(env, standing_height_threshold, asset_cfg, sensor_cfg)
     return distance_error * is_standing
+
+
+def feet_side_order_if_standing(
+    env: ManagerBasedRLEnv,
+    standing_height_threshold: float,
+    feet_asset_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    sensor_cfg: SceneEntityCfg | None = None,
+    margin: float = 0.0,
+    norm: Literal["l1", "l2"] = "l1",
+) -> torch.Tensor:
+    """Penalize crossed feet by enforcing left foot to stay on the robot's left side.
+
+    This assumes ``feet_asset_cfg.body_ids`` resolves to ``[left_foot, right_foot]``.
+    The penalty is zero when ``left_foot_y - right_foot_y >= margin`` in the robot base
+    frame and positive otherwise.
+    """
+    asset: Articulation = env.scene[feet_asset_cfg.name]
+
+    if len(feet_asset_cfg.body_ids) != 2:
+        raise ValueError("Only two feet are supported for feet_side_order_if_standing reward.")
+
+    feet_pos_w = asset.data.body_pos_w[:, feet_asset_cfg.body_ids]
+    feet_pos_b = transform_to_asset_frame(feet_pos_w, asset)
+
+    left_foot_y = feet_pos_b[:, 0, 1]
+    right_foot_y = feet_pos_b[:, 1, 1]
+    ordering_error = torch.clamp(margin - (left_foot_y - right_foot_y), min=0.0)
+
+    if norm == "l1":
+        penalty = ordering_error
+    elif norm == "l2":
+        penalty = torch.square(ordering_error)
+    else:
+        raise ValueError(f"Invalid norm: {norm}. Must be 'l1' or 'l2'.")
+
+    is_standing = if_standing(env, standing_height_threshold, asset_cfg, sensor_cfg)
+    return penalty * is_standing
+
+
+def feet_fore_aft_alignment_if_standing(
+    env: ManagerBasedRLEnv,
+    standing_height_threshold: float,
+    feet_asset_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    sensor_cfg: SceneEntityCfg | None = None,
+    tolerance: float = 0.0,
+    norm: Literal["l1", "l2"] = "l1",
+) -> torch.Tensor:
+    """Penalize large front-back offsets between the feet in the base frame."""
+    asset: Articulation = env.scene[feet_asset_cfg.name]
+
+    if len(feet_asset_cfg.body_ids) != 2:
+        raise ValueError("Only two feet are supported for feet_fore_aft_alignment_if_standing reward.")
+
+    feet_pos_w = asset.data.body_pos_w[:, feet_asset_cfg.body_ids]
+    feet_pos_b = transform_to_asset_frame(feet_pos_w, asset)
+
+    fore_aft_error = torch.clamp(torch.abs(feet_pos_b[:, 0, 0] - feet_pos_b[:, 1, 0]) - tolerance, min=0.0)
+
+    if norm == "l1":
+        penalty = fore_aft_error
+    elif norm == "l2":
+        penalty = torch.square(fore_aft_error)
+    else:
+        raise ValueError(f"Invalid norm: {norm}. Must be 'l1' or 'l2'.")
+
+    is_standing = if_standing(env, standing_height_threshold, asset_cfg, sensor_cfg)
+    return penalty * is_standing
 
 
 def jumping(env: ManagerBasedRLEnv, threshold: float, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
