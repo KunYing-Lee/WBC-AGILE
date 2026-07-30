@@ -78,6 +78,16 @@ export AGILE_K1_USD_CACHE_DIR=/path/to/cache/k1-usd
 python scripts/train.py --task StandUp-K1-v0 --num_envs 2048 --headless
 ```
 
+For multi-GPU training, launch one Isaac Lab process per GPU with Torchrun.
+`--num_envs` is the number of environments **per GPU**, so choose it from the
+desired global environment count divided by `--nproc_per_node`:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.run \
+  --nnodes=1 --nproc_per_node=4 scripts/train.py \
+  --task StandUp-K1-v0 --num_envs 1024 --headless --distributed
+```
+
 This branch provides the training task and simulation contract; it does not
 include a pretrained K1 checkpoint or claim sim-to-real validation.
 

@@ -47,6 +47,9 @@ parser.add_argument("--num_envs", type=int, default=None, help="Number of enviro
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
+parser.add_argument(
+    "--distributed", action="store_true", default=False, help="Run training with multiple GPUs or nodes."
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -139,6 +142,19 @@ def main(
     env_cfg.seed = agent_cfg.seed
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
+    # Configure one simulator and one policy replica per distributed rank.
+    # Torchrun provides LOCAL_RANK/RANK/WORLD_SIZE, while AppLauncher maps the
+    # local rank to the corresponding visible CUDA device.
+    world_rank = 0
+    if args_cli.distributed:
+        if args_cli.device is not None and "cpu" in args_cli.device:
+            raise ValueError("Distributed training requires a CUDA device.")
+        world_rank = app_launcher.global_rank
+        env_cfg.sim.device = f"cuda:{app_launcher.local_rank}"
+        agent_cfg.device = f"cuda:{app_launcher.local_rank}"
+        env_cfg.seed = agent_cfg.seed + world_rank
+        agent_cfg.seed = env_cfg.seed
+
     # specify directory for logging experiments
     log_root_path = os.path.join("logs", "rsl_rl", agent_cfg.experiment_name)
     log_root_path = os.path.abspath(log_root_path)
@@ -206,9 +222,17 @@ def main(
         # load previously trained model
         runner.load(resume_path, load_optimizer=agent_cfg.load_optimizer)
 
-    # dump the configuration into log-directory
-    dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
-    dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+    # Preserve every rank's effective device and seed without allowing a
+    # non-primary rank to overwrite the canonical configuration.
+    if args_cli.distributed:
+        dump_yaml(os.path.join(log_dir, "params", f"env_rank{world_rank}.yaml"), env_cfg)
+        dump_yaml(os.path.join(log_dir, "params", f"agent_rank{world_rank}.yaml"), agent_cfg)
+        if world_rank == 0:
+            dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+            dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
+    else:
+        dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
+        dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 
     # run training
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
