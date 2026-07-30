@@ -66,6 +66,21 @@ python scripts/train.py --task Velocity-T1-v0 --num_envs 2048 --headless
 python scripts/eval.py --task Velocity-T1-v0 --num_envs 32 --checkpoint <path>
 ```
 
+### Experimental Booster K1 stand-up task
+
+The `feature/standup-k1` branch adds a 22-DoF K1 task backed by an explicit
+Booster motor model. Point it at a local checkout of the official K1 URDF and a
+persistent USD conversion cache before launching:
+
+```bash
+export AGILE_K1_URDF_PATH=/path/to/booster_assets/robots/K1/K1_22dof.urdf
+export AGILE_K1_USD_CACHE_DIR=/path/to/cache/k1-usd
+python scripts/train.py --task StandUp-K1-v0 --num_envs 2048 --headless
+```
+
+This branch provides the training task and simulation contract; it does not
+include a pretrained K1 checkpoint or claim sim-to-real validation.
+
 See the [full documentation](https://nvidia-isaac.github.io/WBC-AGILE/) for installation details, training guides, task descriptions, and deployment instructions.
 
 ## Office Hour and FAQ

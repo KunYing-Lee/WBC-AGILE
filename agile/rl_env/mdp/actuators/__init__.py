@@ -16,3 +16,4 @@
 
 from .actuators import *  # noqa: F401, F403
 from .actuators_cfg import *  # noqa: F401, F403
+from .booster import *  # noqa: F401, F403

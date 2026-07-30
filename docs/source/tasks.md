@@ -157,6 +157,11 @@ whole-body movements are essential for recovery.
 | Task ID | Robot | Controlled Joints | Commands | Observations |
 |---------|-------|-------------------|----------|--------------|
 | `StandUp-T1-v0` | Booster T1 | Full body (all joints) | None | History (5 steps) |
+| `StandUp-K1-v0` | Booster K1 (experimental) | Full body (22 joints) | None | History (5 steps) |
+
+The K1 task requires `AGILE_K1_URDF_PATH` to point to the official
+`K1_22dof.urdf` and optionally uses `AGILE_K1_USD_CACHE_DIR` for persistent URDF-to-USD conversion.
+No pretrained K1 policy or sim-to-real validation is included.
 
 **Key features**:
 

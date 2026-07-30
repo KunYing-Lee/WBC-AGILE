@@ -98,6 +98,8 @@ class TestAllTasks(unittest.TestCase):
             "Velocity-T1-v0",
             # T1 Robot - Stand Up
             "StandUp-T1-v0",
+            # Booster K1 Robot - Stand Up
+            "StandUp-K1-v0",
             # G1 Robot - Stand Up / Lie Down via Height Tracking
             "HeightTracking-G1-v0",
             # G1 Robot - Pick and Place - Tracking

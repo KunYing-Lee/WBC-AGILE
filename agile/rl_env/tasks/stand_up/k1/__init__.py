@@ -13,11 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gymnasium as gym
 
-"""Symmetry functions for the G1, K1, and T1 robots."""
+from . import agents
 
-from .symmetry_g1 import lr_mirror_G1
-from .symmetry_k1 import lr_mirror_K1
-from .symmetry_t1 import lr_mirror_T1
+###########
+# RL envs #
+###########
 
-__all__ = ["lr_mirror_G1", "lr_mirror_K1", "lr_mirror_T1"]
+gym.register(
+    id="StandUp-K1-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.stand_up_env_cfg:K1StandUpEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:K1StandUpPpoRunnerCfg",
+        "pre_learn_entry_point": f"{__name__}.pre_learn:pre_learn",
+    },
+)
