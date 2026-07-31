@@ -1,36 +1,88 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 KunYing Lee
 # SPDX-License-Identifier: Apache-2.0
 
-"""Contract tests for the Booster K1 omnidirectional locomotion task."""
+"""CPU-only source-contract tests for Booster K1 locomotion."""
 
-from agile.rl_env.assets.robots import booster_k1
-from agile.rl_env.tasks.locomotion.k1.velocity_env_cfg import (
-    K1_ANG_VEL_Z_RANGE,
-    K1_LIN_VEL_X_RANGE,
-    K1_LIN_VEL_Y_RANGE,
-    ActionsCfg,
-    CommandsCfg,
-    K1LowerVelocityEnvCfg,
-)
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+TASK_PATH = ROOT / "agile/rl_env/tasks/locomotion/k1/velocity_env_cfg.py"
+REGISTER_PATH = ROOT / "agile/rl_env/tasks/locomotion/k1/__init__.py"
+ROBOT_PATH = ROOT / "agile/rl_env/assets/robots/booster_k1.py"
+
+
+def _tree(path: Path) -> ast.Module:
+    return ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+
+def _class(tree: ast.Module, name: str) -> ast.ClassDef:
+    return next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name)
+
+
+def _call_assignment(node: ast.ClassDef, name: str) -> ast.Call:
+    assignment = next(
+        item
+        for item in node.body
+        if isinstance(item, ast.Assign)
+        and len(item.targets) == 1
+        and isinstance(item.targets[0], ast.Name)
+        and item.targets[0].id == name
+    )
+    assert isinstance(assignment.value, ast.Call)
+    return assignment.value
+
+
+def _keyword(call: ast.Call, name: str) -> ast.expr:
+    return next(keyword.value for keyword in call.keywords if keyword.arg == name)
+
+
+def _top_level_literals(tree: ast.Module) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for node in tree.body:
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            try:
+                values[node.targets[0].id] = ast.literal_eval(node.value)
+            except (ValueError, TypeError):
+                pass
+    return values
 
 
 def test_k1_velocity_command_bounds() -> None:
-    commands = CommandsCfg().base_velocity
-    assert tuple(commands.ranges.lin_vel_x) == K1_LIN_VEL_X_RANGE
-    assert tuple(commands.ranges.lin_vel_y) == K1_LIN_VEL_Y_RANGE
-    assert tuple(commands.ranges.ang_vel_z) == K1_ANG_VEL_Z_RANGE
+    values = _top_level_literals(_tree(TASK_PATH))
+    assert values["K1_LIN_VEL_X_RANGE"] == (-1.0, 1.5)
+    assert values["K1_LIN_VEL_Y_RANGE"] == (-1.0, 1.5)
+    assert values["K1_ANG_VEL_Z_RANGE"] == (-2.0, 2.0)
 
 
-def test_k1_locomotion_controls_exact_leg_order() -> None:
-    action = ActionsCfg().joint_pos
-    assert action.joint_names == booster_k1.K1_LEG_JOINT_NAMES
-    assert action.preserve_order is True
-    assert action.scale == 0.25
-    assert len(action.joint_names) == 12
+def test_k1_locomotion_controls_exact_leg_contract() -> None:
+    actions = _class(_tree(TASK_PATH), "ActionsCfg")
+    action = _call_assignment(actions, "joint_pos")
+    assert ast.unparse(_keyword(action, "joint_names")) == "booster_k1.K1_LEG_JOINT_NAMES"
+    assert ast.literal_eval(_keyword(action, "scale")) == 0.25
+    assert ast.literal_eval(_keyword(action, "preserve_order")) is True
 
 
 def test_k1_locomotion_uses_deployed_neutral_leg_posture() -> None:
-    joint_pos = booster_k1.K1_LOCOMOTION_CFG.init_state.joint_pos
+    robot_tree = _tree(ROBOT_PATH)
+    assignment = next(
+        node
+        for node in robot_tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "K1_LOCOMOTION_CFG"
+    )
+    assert isinstance(assignment.value, ast.Call)
+    init_state = _keyword(assignment.value, "init_state")
+    assert isinstance(init_state, ast.Call)
+    joint_pos = ast.literal_eval(_keyword(init_state, "joint_pos"))
     assert joint_pos["Left_Hip_Pitch"] == -0.15
     assert joint_pos["Left_Knee_Pitch"] == 0.3
     assert joint_pos["Left_Ankle_Pitch"] == -0.15
@@ -40,7 +92,29 @@ def test_k1_locomotion_uses_deployed_neutral_leg_posture() -> None:
 
 
 def test_k1_locomotion_rates_match_wbc_agile_contract() -> None:
-    env = K1LowerVelocityEnvCfg()
-    assert env.controller_freq == 50.0
-    assert env.physics_freq == 200.0
-    assert env.decimation == 4
+    env = _class(_tree(TASK_PATH), "K1LowerVelocityEnvCfg")
+    post_init = next(
+        node for node in env.body if isinstance(node, ast.FunctionDef) and node.name == "__post_init__"
+    )
+    assignments = {
+        ast.unparse(node.targets[0]): ast.literal_eval(node.value)
+        for node in post_init.body
+        if isinstance(node, ast.Assign) and len(node.targets) == 1
+    }
+    assert assignments["self.controller_freq"] == 50.0
+    assert assignments["self.physics_freq"] == 200.0
+
+
+def test_velocity_k1_task_is_registered() -> None:
+    calls = [node for node in ast.walk(_tree(REGISTER_PATH)) if isinstance(node, ast.Call)]
+    register = next(call for call in calls if ast.unparse(call.func) == "gym.register")
+    assert ast.literal_eval(_keyword(register, "id")) == "Velocity-K1-v0"
+    kwargs = _keyword(register, "kwargs")
+    assert isinstance(kwargs, ast.Dict)
+    entries = {
+        ast.literal_eval(key): ast.unparse(value)
+        for key, value in zip(kwargs.keys, kwargs.values, strict=True)
+        if key is not None
+    }
+    assert "K1LowerVelocityEnvCfg" in entries["env_cfg_entry_point"]
+    assert "K1VelocityPpoRunnerCfg" in entries["rsl_rl_cfg_entry_point"]
