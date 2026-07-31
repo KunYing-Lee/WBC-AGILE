@@ -356,6 +356,31 @@ class TerminationsCfg:
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
 
+    stable_upright = DoneTermEx(
+        func=mdp.stable_upright,
+        termination_type="good",
+        sigma=5.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "height_sensor_cfg": SceneEntityCfg("height_measurement_sensor"),
+            "feet_sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=booster_k1.FEET_LINK_NAMES,
+            ),
+            "undesired_contact_sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=booster_k1.UNDESIRED_CONTACTS_LINKS,
+            ),
+            "min_height": booster_k1.DEFAULT_TRUNK_HEIGHT - 0.05,
+            "max_tilt_angle_rad": 0.2617993877991494,  # 15 degrees
+            "max_lin_vel": 0.25,
+            "max_ang_vel": 0.5,
+            "min_foot_contact_force": 5.0,
+            "max_undesired_contact_force": 5.0,
+            "duration_s": 1.0,
+        },
+    )
+
     no_height_progress = DoneTermEx(
         func=mdp.no_height_progress,
         termination_type="bad",
@@ -509,11 +534,9 @@ class CurriculumCfg:
     """Curriculum terms for the MDP."""
 
     terrain_levels = CurrTerm(
-        func=mdp.terrain_levels_standing_at_timeout,
+        func=mdp.terrain_levels_successful_termination,
         params={
-            "min_height": booster_k1.DEFAULT_TRUNK_HEIGHT * 0.8,
-            "asset_cfg": SceneEntityCfg("robot"),
-            "sensor_cfg": SceneEntityCfg("height_measurement_sensor"),
+            "successful_termination_term": "stable_upright",
             "n_successes": 5,
             "n_failures": 5,
         },
@@ -523,7 +546,8 @@ class CurriculumCfg:
         func=mdp.adaptive_force_decay,
         params={
             "action_name": "lift",
-            "standing_height_threshold": booster_k1.DEFAULT_TRUNK_HEIGHT - 0.1,
+            "metric_name": "successful_termination_ratio",
+            "successful_termination_term": "stable_upright",
             "threshold": 0.7,
             "ema_alpha": 0.01,
             "disable_threshold": 0.01,

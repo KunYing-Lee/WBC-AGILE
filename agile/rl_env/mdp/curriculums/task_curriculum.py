@@ -503,6 +503,9 @@ class adaptive_force_decay(ManagerTermBase):
 
     - ``"standing_ratio"``: Fraction of envs reaching standing height (from
       ``action.max_heights``). Requires ``standing_height_threshold``.
+    - ``"successful_termination_ratio"``: Fraction of reset environments that
+      fired a configured success termination. Requires
+      ``successful_termination_term``.
     - ``"velocity_xy"``: Instantaneous velocity tracking error norm (L2).
       Evaluated every step on all envs. Requires ``command_name``.
     - Any key in ``command_term.metrics`` (e.g. ``"height_error"``):
@@ -540,6 +543,7 @@ class adaptive_force_decay(ManagerTermBase):
         # Metric-specific (used at init or by specific metrics)
         command_name: str | None = None,  # noqa: ARG002
         standing_height_threshold: float = 0.7,
+        successful_termination_term: str | None = None,
         # Scale method
         scale_method: str = "scale_forces",  # noqa: ARG002
         # Prerequisite
@@ -566,6 +570,8 @@ class adaptive_force_decay(ManagerTermBase):
             command_name: Command term name (used at init for error metrics).
             standing_height_threshold: Min height to count as standing
                 (``"standing_ratio"`` only).
+            successful_termination_term: Termination term whose fired ratio is
+                used by ``"successful_termination_ratio"``.
             prerequisite_curriculum: Name of another curriculum that must reach a
                 threshold before this one starts decaying.
             prerequisite_threshold: The threshold the prerequisite must reach.
@@ -589,6 +595,13 @@ class adaptive_force_decay(ManagerTermBase):
         # Compute metric
         if metric_name == "standing_ratio":
             metric = float((self._action.max_heights[env_ids] > standing_height_threshold).float().mean().item())
+        elif metric_name == "successful_termination_ratio":
+            if successful_termination_term is None:
+                raise ValueError(
+                    "successful_termination_term is required when "
+                    "metric_name='successful_termination_ratio'"
+                )
+            metric = float(env.termination_manager.get_term(successful_termination_term)[env_ids].float().mean().item())
         elif metric_name == "velocity_xy":
             cmd_vel_xy = self._command_term.command[:, :2]
             # Use smoothed velocity from the command term (if available) so that

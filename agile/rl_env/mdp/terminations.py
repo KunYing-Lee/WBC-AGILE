@@ -14,6 +14,8 @@
 # limitations under the License.
 
 
+import math
+
 import torch
 
 import isaaclab.utils.math as math_utils
@@ -365,6 +367,81 @@ class standing(ManagerTermBase):
         if env_ids is None:
             env_ids = torch.arange(self._env.num_envs)
         self.standing_timer[env_ids] = 0
+
+
+class stable_upright(ManagerTermBase):
+    """Terminate after the robot continuously satisfies a full upright-state contract.
+
+    Unlike the legacy :class:`standing` term, this term does not equate base
+    height with standing.  A valid state requires an upright trunk, low base
+    motion, load-bearing contact on every configured foot, and no contact on
+    any configured non-support body.  Every condition must hold continuously
+    for ``duration_s`` before the term fires.
+    """
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self.stable_steps = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        height_sensor_cfg: SceneEntityCfg,
+        feet_sensor_cfg: SceneEntityCfg,
+        undesired_contact_sensor_cfg: SceneEntityCfg,
+        min_height: float,
+        max_tilt_angle_rad: float,
+        max_lin_vel: float,
+        max_ang_vel: float,
+        min_foot_contact_force: float,
+        max_undesired_contact_force: float,
+        duration_s: float,
+    ) -> torch.Tensor:
+        """Return true after all stable-upright conditions hold for ``duration_s``."""
+        if duration_s <= 0.0:
+            raise ValueError(f"duration_s must be positive, got {duration_s}")
+
+        robot, _ = get_robot_cfg(env, asset_cfg)
+        height_sensor: RayCaster = env.scene.sensors[height_sensor_cfg.name]
+        contact_sensor: ContactSensor = env.scene.sensors[feet_sensor_cfg.name]
+
+        height = robot.data.root_pos_w[:, 2] - torch.mean(height_sensor.data.ray_hits_w[..., 2], dim=1)
+
+        # Projected gravity is [0, 0, -1] when the root frame is upright.
+        gravity_z = torch.clamp(robot.data.projected_gravity_b[:, 2], min=-1.0, max=1.0)
+        tilt_angle = torch.acos(-gravity_z)
+
+        lin_speed = torch.linalg.vector_norm(robot.data.root_lin_vel_b, dim=1)
+        ang_speed = torch.linalg.vector_norm(robot.data.root_ang_vel_b, dim=1)
+
+        # Require current vertical ground reaction force on every configured foot.
+        foot_vertical_forces = contact_sensor.data.net_forces_w[:, feet_sensor_cfg.body_ids, 2]
+        feet_supporting = torch.all(foot_vertical_forces > min_foot_contact_force, dim=1)
+
+        undesired_forces = contact_sensor.data.net_forces_w[:, undesired_contact_sensor_cfg.body_ids]
+        has_undesired_contact = torch.any(
+            torch.linalg.vector_norm(undesired_forces, dim=-1) > max_undesired_contact_force,
+            dim=1,
+        )
+
+        instant_valid = (
+            (height >= min_height)
+            & (tilt_angle <= max_tilt_angle_rad)
+            & (lin_speed <= max_lin_vel)
+            & (ang_speed <= max_ang_vel)
+            & feet_supporting
+            & ~has_undesired_contact
+        )
+
+        self.stable_steps = torch.where(instant_valid, self.stable_steps + 1, torch.zeros_like(self.stable_steps))
+        required_steps = max(1, math.ceil(duration_s / env.step_dt))
+        return self.stable_steps >= required_steps
+
+    def reset(self, env_ids: torch.Tensor | None = None) -> None:
+        if env_ids is None:
+            env_ids = torch.arange(self._env.num_envs, device=self._env.device)
+        self.stable_steps[env_ids] = 0
 
 
 def bad_base_pose(
