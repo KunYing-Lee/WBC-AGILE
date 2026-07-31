@@ -698,6 +698,12 @@ class K1LowerVelocityEnvCfg(ManagerBasedRLEnvCfg):
         self.rewards = None
         self.curriculum = None
 
+        # The policy controls only the 12 leg joints. During training, the
+        # zero-dimensional random_pos term independently moves the head and
+        # arms as a disturbance. Nominal evaluation must hold those joints at
+        # their default positions so command tracking is deterministic.
+        self.actions.random_pos = None
+
         self.observations.policy.concatenate_terms = True
         self.observations.policy.flatten_history_dim = True
         self.observations.policy.enable_corruption = False

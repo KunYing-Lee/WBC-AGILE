@@ -182,4 +182,5 @@ def test_k1_eval_adds_nominal_plane_and_evaluation_observations() -> None:
     source = ast.unparse(eval_method)
     assert "self.scene.terrain.terrain_type = 'plane'" in source
     assert "self.scene.terrain.terrain_generator = None" in source
+    assert "self.actions.random_pos = None" in source
     assert "self.observations.eval = mdp.EvaluationObservationsCfg()" in source
