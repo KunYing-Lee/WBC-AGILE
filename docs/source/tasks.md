@@ -100,6 +100,8 @@ model shared with `StandUp-K1-v0` and samples commands from
 The deterministic MuJoCo schedule
 `agile/sim2mujoco/configs/k1_command_bounds.yaml` covers each independent axis
 bound and all eight three-axis corners of this command box.
+Nominal Isaac evaluation uses `k1_velocity_axes_v1.yaml` for per-axis metrics
+and `k1_velocity_sequence_v1.yaml` for a single recorded command sequence.
 
 ```{tip}
 The G1 and T1 locomotion environments share nearly identical MDP configurations, differing

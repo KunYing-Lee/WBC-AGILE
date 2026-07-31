@@ -686,3 +686,20 @@ class K1LowerVelocityEnvCfg(ManagerBasedRLEnvCfg):
         else:
             if self.scene.terrain.terrain_generator is not None:
                 self.scene.terrain.terrain_generator.curriculum = False
+
+    def eval(self):
+        """Configure deterministic nominal evaluation without changing the policy contract."""
+        self.scene.terrain.terrain_type = "plane"
+        self.scene.terrain.terrain_generator = None
+        self.viewer.eye = (-2.5, -5.0, 2.0)
+        self.viewer.lookat = (0.0, 0.0, booster_k1.DEFAULT_TRUNK_HEIGHT)
+        self.viewer.origin_type = "world"
+
+        self.rewards = None
+        self.curriculum = None
+
+        self.observations.policy.concatenate_terms = True
+        self.observations.policy.flatten_history_dim = True
+        self.observations.policy.enable_corruption = False
+        self.observations.critic.concatenate_terms = True
+        self.observations.eval = mdp.EvaluationObservationsCfg()

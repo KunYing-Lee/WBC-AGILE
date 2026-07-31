@@ -1,0 +1,37 @@
+# Sequential nominal commands for a single recorded Booster K1 rollout.
+evaluation:
+  task_name: "Velocity-K1-v0"
+  num_envs: 1
+  episode_length_s: 16.0
+  num_episodes: 1
+  env_overrides:
+    events:
+      disable_all: true
+  environments:
+    - env_ids: [0]
+      name: "axis_sequence"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.0, ang_vel_z: 0.0}
+        - time: 2.0
+          commands:
+            base_velocity: {lin_vel_x: 0.5, lin_vel_y: 0.0, ang_vel_z: 0.0}
+        - time: 4.0
+          commands:
+            base_velocity: {lin_vel_x: -0.5, lin_vel_y: 0.0, ang_vel_z: 0.0}
+        - time: 6.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.5, ang_vel_z: 0.0}
+        - time: 8.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: -0.5, ang_vel_z: 0.0}
+        - time: 10.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.0, ang_vel_z: 0.8}
+        - time: 12.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.0, ang_vel_z: -0.8}
+        - time: 14.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.0, ang_vel_z: 0.0}

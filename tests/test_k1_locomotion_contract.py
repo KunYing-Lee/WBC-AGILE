@@ -15,6 +15,8 @@ TASK_PATH = ROOT / "agile/rl_env/tasks/locomotion/k1/velocity_env_cfg.py"
 REGISTER_PATH = ROOT / "agile/rl_env/tasks/locomotion/k1/__init__.py"
 ROBOT_PATH = ROOT / "agile/rl_env/assets/robots/booster_k1.py"
 COMMAND_SCHEDULE_PATH = ROOT / "agile/sim2mujoco/configs/k1_command_bounds.yaml"
+AXIS_EVAL_PATH = ROOT / "agile/algorithms/evaluation/configs/k1_velocity_axes_v1.yaml"
+SEQUENCE_EVAL_PATH = ROOT / "agile/algorithms/evaluation/configs/k1_velocity_sequence_v1.yaml"
 
 
 def _tree(path: Path) -> ast.Module:
@@ -145,3 +147,39 @@ def test_k1_sim2mujoco_schedules_cover_command_box() -> None:
         for wz in (-2.0, 2.0)
     }
     assert commands >= expected_corners
+
+
+def test_k1_nominal_eval_covers_stand_and_each_axis_direction() -> None:
+    evaluation = yaml.safe_load(AXIS_EVAL_PATH.read_text(encoding="utf-8"))["evaluation"]
+    assert evaluation["task_name"] == "Velocity-K1-v0"
+    assert evaluation["num_envs"] == 7
+    assert evaluation["env_overrides"]["events"]["disable_all"] is True
+
+    commands = {
+        tuple(environment["schedule"][0]["commands"]["base_velocity"].values())
+        for environment in evaluation["environments"]
+    }
+    assert commands == {
+        (0.0, 0.0, 0.0),
+        (0.5, 0.0, 0.0),
+        (-0.5, 0.0, 0.0),
+        (0.0, 0.5, 0.0),
+        (0.0, -0.5, 0.0),
+        (0.0, 0.0, 0.8),
+        (0.0, 0.0, -0.8),
+    }
+
+
+def test_k1_video_sequence_is_time_ordered() -> None:
+    evaluation = yaml.safe_load(SEQUENCE_EVAL_PATH.read_text(encoding="utf-8"))["evaluation"]
+    schedule = evaluation["environments"][0]["schedule"]
+    assert [step["time"] for step in schedule] == [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0]
+
+
+def test_k1_eval_adds_nominal_plane_and_evaluation_observations() -> None:
+    env = _class(_tree(TASK_PATH), "K1LowerVelocityEnvCfg")
+    eval_method = next(node for node in env.body if isinstance(node, ast.FunctionDef) and node.name == "eval")
+    source = ast.unparse(eval_method)
+    assert "self.scene.terrain.terrain_type = 'plane'" in source
+    assert "self.scene.terrain.terrain_generator = None" in source
+    assert "self.observations.eval = mdp.EvaluationObservationsCfg()" in source

@@ -1,0 +1,52 @@
+# Deterministic nominal-axis evaluation for the Booster K1 locomotion policy.
+evaluation:
+  task_name: "Velocity-K1-v0"
+  num_envs: 7
+  episode_length_s: 8.0
+  num_episodes: 1
+  env_overrides:
+    events:
+      disable_all: true
+  environments:
+    - env_ids: [0]
+      name: "stand"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.0, ang_vel_z: 0.0}
+    - env_ids: [1]
+      name: "forward_0p5"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: 0.5, lin_vel_y: 0.0, ang_vel_z: 0.0}
+    - env_ids: [2]
+      name: "backward_m0p5"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: -0.5, lin_vel_y: 0.0, ang_vel_z: 0.0}
+    - env_ids: [3]
+      name: "left_0p5"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.5, ang_vel_z: 0.0}
+    - env_ids: [4]
+      name: "right_m0p5"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: -0.5, ang_vel_z: 0.0}
+    - env_ids: [5]
+      name: "yaw_ccw_0p8"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.0, ang_vel_z: 0.8}
+    - env_ids: [6]
+      name: "yaw_cw_m0p8"
+      schedule:
+        - time: 0.0
+          commands:
+            base_velocity: {lin_vel_x: 0.0, lin_vel_y: 0.0, ang_vel_z: -0.8}
