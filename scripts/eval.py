@@ -43,6 +43,7 @@ parser.add_argument(
 )
 parser.add_argument("--num_envs", type=int, default=16, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
+parser.add_argument("--seed", type=int, default=None, help="Seed used for deterministic environment evaluation.")
 parser.add_argument(
     "--use_pretrained_checkpoint",
     action="store_true",
@@ -219,8 +220,17 @@ def _apply_env_overrides(env_cfg, eval_config):
     # Handle event overrides
     if overrides and overrides.events and hasattr(env_cfg, "events") and env_cfg.events is not None:
         if overrides.events.disable_all:
-            env_cfg.events = None
-            print("[INFO] Disabled all environment events")
+            events_to_remove = []
+            for event_name in dir(env_cfg.events):
+                if not event_name.startswith("_"):
+                    event = getattr(env_cfg.events, event_name, None)
+                    if event and hasattr(event, "mode"):
+                        events_to_remove.append(event_name)
+
+            for event_name in events_to_remove:
+                delattr(env_cfg.events, event_name)
+
+            print(f"[INFO] Disabled all environment events: {events_to_remove}")
 
         elif overrides.events.disable_interval_events:
             # Remove all interval-mode events
@@ -326,6 +336,9 @@ def main():
         num_envs=args_cli.num_envs,
         use_fabric=not args_cli.disable_fabric,
     )
+
+    if args_cli.seed is not None:
+        env_cfg.seed = args_cli.seed
 
     # Set the environment to evaluation mode
     if hasattr(env_cfg, "eval"):
@@ -532,6 +545,7 @@ def main():
             "eval_config": args_cli.eval_config,
             "num_envs": env.num_envs,
             "num_steps": args_cli.num_steps,
+            "seed": args_cli.seed,
             "noise_scale": args_cli.noise_scale,
             "noise_seed": args_cli.noise_seed,
             "random_commands": args_cli.random_commands,
