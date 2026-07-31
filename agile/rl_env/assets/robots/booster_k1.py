@@ -178,3 +178,26 @@ K1_DELAYED_PD_CFG = ArticulationCfg(
         ),
     },
 )
+
+
+K1_LOCOMOTION_CFG = K1_DELAYED_PD_CFG.replace(
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, DEFAULT_TRUNK_HEIGHT),
+        joint_pos={
+            "ALeft_Shoulder_Pitch": 0.2,
+            "Left_Shoulder_Roll": -1.25,
+            "Left_Elbow_Yaw": -0.5,
+            "ARight_Shoulder_Pitch": 0.2,
+            "Right_Shoulder_Roll": 1.25,
+            "Right_Elbow_Yaw": 0.5,
+            "Left_Hip_Pitch": -0.15,
+            "Left_Knee_Pitch": 0.3,
+            "Left_Ankle_Pitch": -0.15,
+            "Right_Hip_Pitch": -0.15,
+            "Right_Knee_Pitch": 0.3,
+            "Right_Ankle_Pitch": -0.15,
+        },
+        joint_vel={".*": 0.0},
+    )
+)
+"""K1 articulation with the deployed LOCO neutral posture as its action offset."""

@@ -96,6 +96,8 @@ class TestAllTasks(unittest.TestCase):
             "Velocity-Height-G1-Distillation-History-v0",
             # T1 Robot - Basic Locomotion
             "Velocity-T1-v0",
+            # Booster K1 Robot - Basic Locomotion
+            "Velocity-K1-v0",
             # T1 Robot - Stand Up
             "StandUp-T1-v0",
             # Booster K1 Robot - Stand Up
