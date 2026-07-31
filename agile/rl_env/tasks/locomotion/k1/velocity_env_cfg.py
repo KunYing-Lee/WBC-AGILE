@@ -162,6 +162,8 @@ class ActionsCfg:
         ),
     )
 
+    upper_body_hold = None
+
 
 @configclass
 class ObservationsCfg:
@@ -700,9 +702,14 @@ class K1LowerVelocityEnvCfg(ManagerBasedRLEnvCfg):
 
         # The policy controls only the 12 leg joints. During training, the
         # zero-dimensional random_pos term independently moves the head and
-        # arms as a disturbance. Nominal evaluation must hold those joints at
-        # their default positions so command tracking is deterministic.
+        # arms as a disturbance. Nominal evaluation replaces it with an
+        # explicit zero-dimensional default-position hold term.
         self.actions.random_pos = None
+        self.actions.upper_body_hold = mdp.HoldJointPositionActionCfg(
+            asset_name="robot",
+            joint_names=booster_k1.K1_HEAD_JOINT_NAMES + booster_k1.K1_ARM_JOINT_NAMES,
+            preserve_order=True,
+        )
 
         self.observations.policy.concatenate_terms = True
         self.observations.policy.flatten_history_dim = True

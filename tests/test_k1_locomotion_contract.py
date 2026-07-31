@@ -183,4 +183,6 @@ def test_k1_eval_adds_nominal_plane_and_evaluation_observations() -> None:
     assert "self.scene.terrain.terrain_type = 'plane'" in source
     assert "self.scene.terrain.terrain_generator = None" in source
     assert "self.actions.random_pos = None" in source
+    assert "self.actions.upper_body_hold = mdp.HoldJointPositionActionCfg" in source
+    assert "joint_names=booster_k1.K1_HEAD_JOINT_NAMES + booster_k1.K1_ARM_JOINT_NAMES" in source
     assert "self.observations.eval = mdp.EvaluationObservationsCfg()" in source

@@ -30,7 +30,7 @@ from .delta_actions import DeltaJointPositionAction  # noqa: F401, E402
 # Import GUI action class for registration
 from .joint_pos_gui_action import JointPositionGUIAction  # noqa: F401, E402
 from .policy_actions import AgileBasedLowerBodyAction  # noqa: F401, E402
-from .random_actions import RandomPositionAction  # noqa: F401, E402
+from .random_actions import HoldJointPositionAction, RandomPositionAction  # noqa: F401, E402
 
 # Import velocity profile configurations
 from .velocity_profiles import (
@@ -41,6 +41,13 @@ from .velocity_profiles import (
 ##
 # Joint actions.
 ##
+
+
+@configclass
+class HoldJointPositionActionCfg(mdp.JointActionCfg):
+    """Hold the selected joints at their configured default positions."""
+
+    class_type: type[ActionTerm] = HoldJointPositionAction
 
 
 @configclass

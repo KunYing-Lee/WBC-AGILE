@@ -39,6 +39,30 @@ from .velocity_profiles import (
 )
 
 
+class HoldJointPositionAction(JointAction):
+    """Hold selected joints at the articulation's configured default positions."""
+
+    cfg: actions_cfg.HoldJointPositionActionCfg
+
+    def __init__(self, cfg: actions_cfg.HoldJointPositionActionCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        self._processed_actions = self._asset.data.default_joint_pos[:, self._joint_ids].clone()
+        self._export_IO_descriptor = False
+
+    @property
+    def action_dim(self) -> int:
+        """The term is autonomous and does not consume policy actions."""
+        return 0
+
+    def process_actions(self, actions: torch.Tensor) -> None:  # noqa: ARG002
+        """Restore the immutable default targets before every simulation step."""
+        self._processed_actions.copy_(self._asset.data.default_joint_pos[:, self._joint_ids])
+
+    def apply_actions(self) -> None:
+        """Apply the fixed joint-position targets."""
+        self._asset.set_joint_position_target(self.processed_actions, joint_ids=self._joint_ids)
+
+
 class RandomPositionAction(JointAction):
     """Joint action term that applies the processed actions to the articulation's joints as position commands."""
 
