@@ -1,0 +1,48 @@
+# Deterministic Booster K1 command-bound schedules.
+#
+# This file is consumed by scripts/sim2mujoco_watcher.py --schedules.  It
+# exercises both limits of each independent command axis and all eight corners
+# of the configured three-dimensional command box.  Each entry is:
+# [start_time_s, vx_mps, vy_mps, wz_radps, height_m, label]
+
+x_axis:
+  - [0.0, 0.0, 0.0, 0.0, 0.72, stand]
+  - [2.0, -1.0, 0.0, 0.0, 0.72, vx_min]
+  - [6.0, 1.5, 0.0, 0.0, 0.72, vx_max]
+  - [10.0, 0.0, 0.0, 0.0, 0.72, stop]
+
+y_axis:
+  - [0.0, 0.0, 0.0, 0.0, 0.72, stand]
+  - [2.0, 0.0, -1.0, 0.0, 0.72, vy_min]
+  - [6.0, 0.0, 1.5, 0.0, 0.72, vy_max]
+  - [10.0, 0.0, 0.0, 0.0, 0.72, stop]
+
+yaw_axis:
+  - [0.0, 0.0, 0.0, 0.0, 0.72, stand]
+  - [2.0, 0.0, 0.0, -2.0, 0.72, wz_min]
+  - [6.0, 0.0, 0.0, 2.0, 0.72, wz_max]
+  - [10.0, 0.0, 0.0, 0.0, 0.72, stop]
+
+corners_same_sign:
+  - [0.0, 0.0, 0.0, 0.0, 0.72, stand]
+  - [2.0, -1.0, -1.0, -2.0, 0.72, corner_mmm]
+  - [6.0, 1.5, 1.5, 2.0, 0.72, corner_ppp]
+  - [10.0, 0.0, 0.0, 0.0, 0.72, stop]
+
+corners_yaw_flipped:
+  - [0.0, 0.0, 0.0, 0.0, 0.72, stand]
+  - [2.0, -1.0, -1.0, 2.0, 0.72, corner_mmp]
+  - [6.0, 1.5, 1.5, -2.0, 0.72, corner_ppm]
+  - [10.0, 0.0, 0.0, 0.0, 0.72, stop]
+
+corners_y_flipped:
+  - [0.0, 0.0, 0.0, 0.0, 0.72, stand]
+  - [2.0, -1.0, 1.5, -2.0, 0.72, corner_mpm]
+  - [6.0, 1.5, -1.0, 2.0, 0.72, corner_pmp]
+  - [10.0, 0.0, 0.0, 0.0, 0.72, stop]
+
+corners_y_and_yaw_flipped:
+  - [0.0, 0.0, 0.0, 0.0, 0.72, stand]
+  - [2.0, -1.0, 1.5, 2.0, 0.72, corner_mpp]
+  - [6.0, 1.5, -1.0, -2.0, 0.72, corner_pmm]
+  - [10.0, 0.0, 0.0, 0.0, 0.72, stop]

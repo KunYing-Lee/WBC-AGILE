@@ -8,10 +8,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 TASK_PATH = ROOT / "agile/rl_env/tasks/locomotion/k1/velocity_env_cfg.py"
 REGISTER_PATH = ROOT / "agile/rl_env/tasks/locomotion/k1/__init__.py"
 ROBOT_PATH = ROOT / "agile/rl_env/assets/robots/booster_k1.py"
+COMMAND_SCHEDULE_PATH = ROOT / "agile/sim2mujoco/configs/k1_command_bounds.yaml"
 
 
 def _tree(path: Path) -> ast.Module:
@@ -121,3 +124,24 @@ def test_velocity_k1_task_is_registered() -> None:
     }
     assert "K1LowerVelocityEnvCfg" in entries["env_cfg_entry_point"]
     assert "K1VelocityPpoRunnerCfg" in entries["rsl_rl_cfg_entry_point"]
+
+
+def test_k1_sim2mujoco_schedules_cover_command_box() -> None:
+    schedules = yaml.safe_load(COMMAND_SCHEDULE_PATH.read_text(encoding="utf-8"))
+    commands = {
+        (float(entry[1]), float(entry[2]), float(entry[3]))
+        for entries in schedules.values()
+        for entry in entries
+    }
+
+    assert {command[0] for command in commands} >= {-1.0, 1.5}
+    assert {command[1] for command in commands} >= {-1.0, 1.5}
+    assert {command[2] for command in commands} >= {-2.0, 2.0}
+
+    expected_corners = {
+        (vx, vy, wz)
+        for vx in (-1.0, 1.5)
+        for vy in (-1.0, 1.5)
+        for wz in (-2.0, 2.0)
+    }
+    assert commands >= expected_corners
