@@ -60,7 +60,7 @@ def _top_level_literals(tree: ast.Module) -> dict[str, object]:
 def test_k1_velocity_command_bounds() -> None:
     values = _top_level_literals(_tree(TASK_PATH))
     assert values["K1_LIN_VEL_X_RANGE"] == (-1.0, 1.5)
-    assert values["K1_LIN_VEL_Y_RANGE"] == (-1.0, 1.5)
+    assert values["K1_LIN_VEL_Y_RANGE"] == (-1.5, 1.5)
     assert values["K1_ANG_VEL_Z_RANGE"] == (-2.0, 2.0)
 
 
@@ -135,13 +135,13 @@ def test_k1_sim2mujoco_schedules_cover_command_box() -> None:
     }
 
     assert {command[0] for command in commands} >= {-1.0, 1.5}
-    assert {command[1] for command in commands} >= {-1.0, 1.5}
+    assert {command[1] for command in commands} >= {-1.5, 1.5}
     assert {command[2] for command in commands} >= {-2.0, 2.0}
 
     expected_corners = {
         (vx, vy, wz)
         for vx in (-1.0, 1.5)
-        for vy in (-1.0, 1.5)
+        for vy in (-1.5, 1.5)
         for wz in (-2.0, 2.0)
     }
     assert commands >= expected_corners

@@ -37,7 +37,7 @@ from agile.rl_env.assets.robots import booster_k1
 from agile.rl_env.mdp.terrains import LESS_ROUGH_TERRAIN_CFG
 
 K1_LIN_VEL_X_RANGE = (-1.0, 1.5)
-K1_LIN_VEL_Y_RANGE = (-1.0, 1.5)
+K1_LIN_VEL_Y_RANGE = (-1.5, 1.5)
 K1_ANG_VEL_Z_RANGE = (-2.0, 2.0)
 
 

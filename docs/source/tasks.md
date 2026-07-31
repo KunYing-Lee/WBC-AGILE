@@ -95,7 +95,8 @@ the pick & place task freezes a trained locomotion policy and layers upper-body 
 All three robots use a delayed actuator model, which adds communication delay between the
 policy output and joint actuation. The K1 task uses the hardware-parameterized delayed PD
 model shared with `StandUp-K1-v0` and samples commands from
-`vx, vy in [-1.0, 1.5] m/s` and `wz in [-2.0, 2.0] rad/s`.
+`vx in [-1.0, 1.5] m/s`, `vy in [-1.5, 1.5] m/s`, and
+`wz in [-2.0, 2.0] rad/s`.
 The deterministic MuJoCo schedule
 `agile/sim2mujoco/configs/k1_command_bounds.yaml` covers each independent axis
 bound and all eight three-axis corners of this command box.
