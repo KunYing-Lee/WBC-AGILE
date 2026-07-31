@@ -96,10 +96,13 @@ def test_k1_locomotion_rates_match_wbc_agile_contract() -> None:
     post_init = next(
         node for node in env.body if isinstance(node, ast.FunctionDef) and node.name == "__post_init__"
     )
+    wanted = {"self.controller_freq", "self.physics_freq"}
     assignments = {
         ast.unparse(node.targets[0]): ast.literal_eval(node.value)
         for node in post_init.body
-        if isinstance(node, ast.Assign) and len(node.targets) == 1
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and ast.unparse(node.targets[0]) in wanted
     }
     assert assignments["self.controller_freq"] == 50.0
     assert assignments["self.physics_freq"] == 200.0
