@@ -39,6 +39,10 @@ from agile.rl_env.mdp.terrains import LESS_ROUGH_TERRAIN_CFG
 K1_LIN_VEL_X_RANGE = (-1.0, 1.5)
 K1_LIN_VEL_Y_RANGE = (-1.5, 1.5)
 K1_ANG_VEL_Z_RANGE = (-2.0, 2.0)
+K1_INITIAL_LIN_VEL_X_RANGE = (-0.5, 0.5)
+K1_INITIAL_LIN_VEL_Y_RANGE = (-0.5, 0.5)
+K1_INITIAL_ANG_VEL_Z_RANGE = (-1.0, 1.0)
+K1_COMMAND_CURRICULUM_STEPS = 1_000_000
 
 
 @configclass
@@ -602,6 +606,25 @@ class LocomotionEventCfg:
 @configclass
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
+
+    velocity_command_ranges = CurrTerm(
+        func=mdp.velocity_command_range_step,
+        params={
+            "command_name": "base_velocity",
+            "start_ranges": {
+                "lin_vel_x": K1_INITIAL_LIN_VEL_X_RANGE,
+                "lin_vel_y": K1_INITIAL_LIN_VEL_Y_RANGE,
+                "ang_vel_z": K1_INITIAL_ANG_VEL_Z_RANGE,
+            },
+            "terminal_ranges": {
+                "lin_vel_x": K1_LIN_VEL_X_RANGE,
+                "lin_vel_y": K1_LIN_VEL_Y_RANGE,
+                "ang_vel_z": K1_ANG_VEL_Z_RANGE,
+            },
+            "start_step": 0,
+            "num_steps": K1_COMMAND_CURRICULUM_STEPS,
+        },
+    )
 
     terrain_levels = CurrTerm(
         func=mdp.terrain_levels_vel_curriculum,

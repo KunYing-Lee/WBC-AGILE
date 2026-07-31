@@ -64,6 +64,35 @@ def test_k1_velocity_command_bounds() -> None:
     assert values["K1_LIN_VEL_X_RANGE"] == (-1.0, 1.5)
     assert values["K1_LIN_VEL_Y_RANGE"] == (-1.5, 1.5)
     assert values["K1_ANG_VEL_Z_RANGE"] == (-2.0, 2.0)
+    assert values["K1_INITIAL_LIN_VEL_X_RANGE"] == (-0.5, 0.5)
+    assert values["K1_INITIAL_LIN_VEL_Y_RANGE"] == (-0.5, 0.5)
+    assert values["K1_INITIAL_ANG_VEL_Z_RANGE"] == (-1.0, 1.0)
+    assert values["K1_COMMAND_CURRICULUM_STEPS"] == 1_000_000
+
+
+def test_k1_velocity_command_curriculum_expands_to_full_contract() -> None:
+    curriculum = _class(_tree(TASK_PATH), "CurriculumCfg")
+    term = _call_assignment(curriculum, "velocity_command_ranges")
+    assert ast.unparse(_keyword(term, "func")) == "mdp.velocity_command_range_step"
+
+    params = _keyword(term, "params")
+    assert isinstance(params, ast.Dict)
+    entries = {
+        ast.literal_eval(key): value
+        for key, value in zip(params.keys, params.values, strict=True)
+        if key is not None
+    }
+    assert ast.literal_eval(entries["command_name"]) == "base_velocity"
+    assert ast.literal_eval(entries["start_step"]) == 0
+    assert ast.unparse(entries["num_steps"]) == "K1_COMMAND_CURRICULUM_STEPS"
+    assert ast.unparse(entries["start_ranges"]) == (
+        "{'lin_vel_x': K1_INITIAL_LIN_VEL_X_RANGE, 'lin_vel_y': K1_INITIAL_LIN_VEL_Y_RANGE, "
+        "'ang_vel_z': K1_INITIAL_ANG_VEL_Z_RANGE}"
+    )
+    assert ast.unparse(entries["terminal_ranges"]) == (
+        "{'lin_vel_x': K1_LIN_VEL_X_RANGE, 'lin_vel_y': K1_LIN_VEL_Y_RANGE, "
+        "'ang_vel_z': K1_ANG_VEL_Z_RANGE}"
+    )
 
 
 def test_k1_locomotion_controls_exact_leg_contract() -> None:
