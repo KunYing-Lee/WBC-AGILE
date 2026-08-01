@@ -132,7 +132,18 @@ def test_k1_nominal_first_disables_dr_and_uses_dense_rewards() -> None:
     rewards = _class(tree, "RewardsCfg")
     linear_tracking = _call_assignment(rewards, "track_lin_vel_xy_exp")
     linear_params = ast.literal_eval(_keyword(linear_tracking, "params"))
-    assert linear_params["std"] == 0.5
+    assert ast.literal_eval(_keyword(linear_tracking, "weight")) == 5.0
+    assert linear_params["std"] == 0.2
+    yaw_tracking = _call_assignment(rewards, "track_ang_vel")
+    yaw_params_node = _keyword(yaw_tracking, "params")
+    assert isinstance(yaw_params_node, ast.Dict)
+    yaw_params = {
+        ast.literal_eval(key): value
+        for key, value in zip(yaw_params_node.keys, yaw_params_node.values, strict=True)
+        if key is not None
+    }
+    assert ast.literal_eval(_keyword(yaw_tracking, "weight")) == 5.0
+    assert ast.literal_eval(yaw_params["std"]) == 0.2
     action_rate = _call_assignment(rewards, "action_rate")
     assert ast.literal_eval(_keyword(action_rate, "weight")) == -0.005
     _call_assignment(rewards, "feet_air_time")

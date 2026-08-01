@@ -223,16 +223,16 @@ class RewardsCfg:
 
     track_lin_vel_xy_exp = RewTerm(
         func=mdp.track_lin_vel_xy_exp,
-        weight=3.0,
-        params={"command_name": "base_velocity", "std": 0.5},
+        weight=5.0,
+        params={"command_name": "base_velocity", "std": 0.2},
     )
 
     track_ang_vel = RewTerm(
         func=mdp.track_ang_vel_z_exp,
-        weight=2.0,
+        weight=5.0,
         params={
             "command_name": "base_velocity",
-            "std": 0.5,
+            "std": 0.2,
             "asset_cfg": SceneEntityCfg("robot", body_names=["Trunk"]),
         },
     )
