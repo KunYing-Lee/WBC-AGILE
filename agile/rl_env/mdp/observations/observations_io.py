@@ -139,3 +139,16 @@ def contact_force_norm(
     body_forces = net_contact_forces[:, sensor_cfg.body_ids].norm(dim=2)
 
     return body_forces
+
+
+@generic_io_descriptor(  # type: ignore[arg-type]
+    observation_type="BodyState", on_inspect=[record_body_names, record_dtype, record_shape], units="m"
+)
+def body_pos_w_flat(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Extract selected world-frame body positions as a flat vector."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    positions = asset.data.body_pos_w[:, asset_cfg.body_ids]
+    return positions.reshape(positions.shape[0], -1)

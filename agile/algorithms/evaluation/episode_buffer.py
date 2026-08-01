@@ -37,6 +37,10 @@ class Frame:
     commands: torch.Tensor = torch.tensor([])  # [num_envs, 4]
     actions: torch.Tensor = torch.tensor([])  # [num_envs, num_joints, 1]
 
+    # Optional gait-event fields. Foot ordering is fixed by the task config.
+    foot_contact_force: torch.Tensor = torch.tensor([])  # [num_envs, num_feet]
+    foot_pos_w: torch.Tensor = torch.tensor([])  # [num_envs, num_feet * 3]
+
     # Add custom fields as needed
 
     @staticmethod

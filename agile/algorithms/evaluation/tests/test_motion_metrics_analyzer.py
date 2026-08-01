@@ -124,6 +124,35 @@ class TestMotionMetricsAnalyzer(unittest.TestCase):
         self.assertIn("mean_acc_rate", self.metrics._compute_functions)
         self.assertIn("max_acc_rate", self.metrics._compute_functions)
 
+    def test_gait_metrics_measure_touchdown_swing_cadence_and_stride(self):
+        metrics = MotionMetricsAnalyzer(max_episode_length=12, control_dt=0.1)
+        forces = torch.full((12, 1, 2), 100.0)
+        forces[2:4, 0, 0] = 0.0
+        forces[6:8, 0, 0] = 0.0
+        forces[4:6, 0, 1] = 0.0
+        forces[8:10, 0, 1] = 0.0
+
+        foot_pos = torch.zeros((12, 1, 6))
+        foot_pos[4:, 0, 0] = 0.2
+        foot_pos[8:, 0, 0] = 0.6
+        foot_pos[6:, 0, 3] = 0.3
+        foot_pos[10:, 0, 3] = 0.7
+        metrics.update(
+            {
+                "frame_counts": torch.tensor([12]),
+                "joint_pos": torch.zeros((12, 1, 1, 1)),
+                "joint_vel": torch.zeros((12, 1, 1, 1)),
+                "joint_acc": torch.zeros((12, 1, 1, 1)),
+                "foot_contact_force": forces,
+                "foot_pos_w": foot_pos,
+            }
+        )
+        metrics.conclude()
+        result = metrics.get_metrics()["metrics"]["full_body"]
+        self.assertAlmostEqual(result["mean_foot_swing_time"], 0.2)
+        self.assertAlmostEqual(result["touchdown_rate_hz_per_foot"], 4.0 / 2.4)
+        self.assertAlmostEqual(result["mean_stride_length_xy"], 0.4)
+
     def test_update_with_terminated_data(self):
         """Test updating metrics with terminated data."""
         # Add the terminated data to metrics

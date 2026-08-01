@@ -385,4 +385,10 @@ def test_k1_eval_adds_nominal_plane_and_evaluation_observations() -> None:
     assert "self.actions.random_pos = None" in source
     assert "self.actions.upper_body_hold = mdp.HoldJointPositionActionCfg" in source
     assert "joint_names=booster_k1.K1_HEAD_JOINT_NAMES + booster_k1.K1_ARM_JOINT_NAMES" in source
-    assert "self.observations.eval = mdp.EvaluationObservationsCfg()" in source
+    assert "self.observations.eval = K1EvaluationObservationsCfg()" in source
+
+    gait_eval = _class(_tree(TASK_PATH), "K1EvaluationObservationsCfg")
+    gait_source = ast.unparse(gait_eval)
+    assert "func=mdp.contact_force_norm" in gait_source
+    assert "func=mdp.body_pos_w_flat" in gait_source
+    assert "body_names='.*foot_link.*'" in gait_source

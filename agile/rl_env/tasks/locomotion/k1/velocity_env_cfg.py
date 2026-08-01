@@ -753,7 +753,21 @@ class K1LowerVelocityEnvCfg(ManagerBasedRLEnvCfg):
         self.observations.policy.flatten_history_dim = True
         self.observations.policy.enable_corruption = False
         self.observations.critic.concatenate_terms = True
-        self.observations.eval = mdp.EvaluationObservationsCfg()
+        self.observations.eval = K1EvaluationObservationsCfg()
+
+
+@configclass
+class K1EvaluationObservationsCfg(mdp.EvaluationObservationsCfg):
+    """Evaluation state required for paired K1 stride and cadence metrics."""
+
+    foot_contact_force = ObsTerm(
+        func=mdp.contact_force_norm,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*foot_link.*")},
+    )
+    foot_pos_w = ObsTerm(
+        func=mdp.body_pos_w_flat,
+        params={"asset_cfg": SceneEntityCfg("robot", body_names=".*foot_link.*")},
+    )
 
 
 @configclass

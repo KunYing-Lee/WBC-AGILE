@@ -84,7 +84,10 @@ class PolicyEvaluator:
 
         # Initialize metrics calculator
         self._metrics = MotionMetricsAnalyzer(
-            max_episode_length=self._max_episode_len, joint_groups=self._joint_groups, verbose=verbose
+            max_episode_length=self._max_episode_len,
+            joint_groups=self._joint_groups,
+            control_dt=getattr(env, "step_dt", None),
+            verbose=verbose,
         )
         self._metrics_path = metrics_path
 
@@ -442,7 +445,7 @@ class PolicyEvaluator:
         ]
 
         # Optional fields (nice to have for analysis but not required)
-        optional_fields = []
+        optional_fields = ["foot_contact_force", "foot_pos_w"]
 
         # Extract data for each required field
         frame_data = {}

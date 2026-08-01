@@ -42,6 +42,8 @@ class MotionMetricsAnalyzer:
         self,
         max_episode_length: int = 0,
         joint_groups: dict[str, list[int]] | None = None,
+        control_dt: float | None = None,
+        foot_contact_force_threshold: float = 20.0,
         verbose: bool = False,
     ):
         """Initialize a new smoothness measures calculator.
@@ -58,6 +60,12 @@ class MotionMetricsAnalyzer:
         self.success_rate = 0.0
         self.max_episode_length = max_episode_length
         self.joint_groups = joint_groups or {}
+        if control_dt is not None and control_dt <= 0.0:
+            raise ValueError("control_dt must be positive when gait metrics are enabled.")
+        if foot_contact_force_threshold <= 0.0:
+            raise ValueError("foot_contact_force_threshold must be positive.")
+        self.control_dt = control_dt
+        self.foot_contact_force_threshold = foot_contact_force_threshold
         self.verbose = verbose
 
         # Print joint groups for debugging
@@ -111,6 +119,11 @@ class MotionMetricsAnalyzer:
         for name, func in base_metrics.items():
             self.register_metric(name, func)
 
+        if self.control_dt is not None:
+            self.register_metric("mean_foot_swing_time", self._compute_mean_foot_swing_time)
+            self.register_metric("touchdown_rate_hz_per_foot", self._compute_touchdown_rate_hz_per_foot)
+            self.register_metric("mean_stride_length_xy", self._compute_mean_stride_length_xy)
+
         # Register body part specific metrics if joint groups provided,
         # but only for joint-specific metrics
         for group_name, joint_indices in self.joint_groups.items():
@@ -125,6 +138,70 @@ class MotionMetricsAnalyzer:
                     f"{group_name}_{name}",
                     self._create_group_metric(func, joint_indices),
                 )
+
+    def _extract_gait_events(
+        self,
+        full_data: dict[str, torch.Tensor],
+        env_data: dict,
+    ) -> tuple[list[float], list[float], int]:
+        """Extract completed swing durations and same-foot touchdown displacements."""
+        if "foot_contact_force" not in full_data or "foot_pos_w" not in full_data:
+            return [], [], 0
+        env_idx = env_data["env_idx"]
+        num_frames = env_data["num_frames"]
+        forces = full_data["foot_contact_force"][:num_frames, env_idx]
+        positions = full_data["foot_pos_w"][:num_frames, env_idx]
+        if forces.ndim != 2 or positions.ndim != 2 or positions.shape[1] != forces.shape[1] * 3:
+            raise ValueError(
+                f"Invalid gait tensor shapes: forces={tuple(forces.shape)}, positions={tuple(positions.shape)}."
+            )
+        positions = positions.reshape(num_frames, forces.shape[1], 3)
+        in_contact = forces > self.foot_contact_force_threshold
+        touchdown = in_contact[1:] & ~in_contact[:-1]
+
+        swing_times: list[float] = []
+        stride_lengths: list[float] = []
+        touchdown_count = 0
+        for foot_idx in range(forces.shape[1]):
+            touchdown_indices = torch.nonzero(touchdown[:, foot_idx], as_tuple=False).flatten() + 1
+            touchdown_count += int(touchdown_indices.numel())
+            for touchdown_idx in touchdown_indices.tolist():
+                air_frames = 0
+                frame_idx = touchdown_idx - 1
+                while frame_idx >= 0 and not bool(in_contact[frame_idx, foot_idx]):
+                    air_frames += 1
+                    frame_idx -= 1
+                if frame_idx >= 0 and air_frames > 0:
+                    swing_times.append(air_frames * self.control_dt)
+            if touchdown_indices.numel() >= 2:
+                touchdown_xy = positions[touchdown_indices, foot_idx, :2]
+                stride_lengths.extend(torch.linalg.vector_norm(torch.diff(touchdown_xy, dim=0), dim=1).tolist())
+        return swing_times, stride_lengths, touchdown_count
+
+    def _compute_mean_foot_swing_time(self, full_data: dict[str, torch.Tensor], env_data: dict) -> tuple[float, float]:
+        swing_times, _, _ = self._extract_gait_events(full_data, env_data)
+        if not swing_times:
+            return 0.0, 0.0
+        return float(np.mean(swing_times)), float(len(swing_times))
+
+    def _compute_touchdown_rate_hz_per_foot(
+        self, full_data: dict[str, torch.Tensor], env_data: dict
+    ) -> tuple[float, float]:
+        _, _, touchdown_count = self._extract_gait_events(full_data, env_data)
+        forces = full_data.get("foot_contact_force")
+        if forces is None or touchdown_count == 0:
+            return 0.0, 0.0
+        num_feet = forces.shape[-1]
+        duration = env_data["num_frames"] * self.control_dt
+        return touchdown_count / (duration * num_feet), duration * num_feet
+
+    def _compute_mean_stride_length_xy(
+        self, full_data: dict[str, torch.Tensor], env_data: dict
+    ) -> tuple[float, float]:
+        _, stride_lengths, _ = self._extract_gait_events(full_data, env_data)
+        if not stride_lengths:
+            return 0.0, 0.0
+        return float(np.mean(stride_lengths)), float(len(stride_lengths))
 
     def _create_group_metric(self, base_metric_fn: Callable, joint_indices: list[int]) -> Callable:
         """Create a joint-group specific metric function from a base metric function.
