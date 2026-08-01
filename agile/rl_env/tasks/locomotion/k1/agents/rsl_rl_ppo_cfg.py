@@ -104,7 +104,7 @@ class K1VelocityStrideFinetunePpoRunnerCfg(RslRlOnPolicyRunnerCfg):
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
-        reference_policy_kl_coef=1.0,
+        reference_policy_kl_coef=0.1,
         reference_policy_kl_cvar_fraction=1.0,
         symmetry_cfg=RslRlSymmetryCfg(
             use_data_augmentation=True,

@@ -286,7 +286,7 @@ def test_k1_stride_finetune_is_a_separate_actor_only_training_contract() -> None
     assert "log_std_range=(math.log(0.05), math.log(0.6))" in runner_source
     assert "learning_rate=0.0003" in runner_source
     assert "entropy_coef=0.001" in runner_source
-    assert "reference_policy_kl_coef=1.0" in runner_source
+    assert "reference_policy_kl_coef=0.1" in runner_source
 
     registrations = [
         call
