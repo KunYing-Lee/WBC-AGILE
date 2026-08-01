@@ -49,6 +49,9 @@ class RslRlPpoActorCriticCfg:
     noise_std_type: Literal["scalar", "log"] = "scalar"
     """The type of noise standard deviation for the policy. Default is scalar."""
 
+    log_std_range: tuple[float, float] = (-7.0, 2.0)
+    """Inclusive log-standard-deviation bounds used by log-noise policies."""
+
     actor_hidden_dims: list[int] = MISSING
     """The hidden dimensions of the actor network."""
 
@@ -147,6 +150,12 @@ class RslRlPpoAlgorithmCfg:
 
     reward_normalization_cfg: RslRlRewardNormalizationCfg | None = None
     """Configuration for reward normalization. Default is None (disabled)."""
+
+    reference_policy_kl_coef: float = 0.0
+    """Weight of the KL penalty to a fixed behavior-policy snapshot."""
+
+    reference_policy_kl_cvar_fraction: float = 1.0
+    """Worst-case sample fraction used by the fixed reference-policy KL penalty."""
 
 
 #########################

@@ -1225,6 +1225,32 @@ def feet_air_time_positive_biped_command(
     return reward
 
 
+def feet_air_time_thresholded_command(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    command_slice: slice,
+    threshold: float,
+    sensor_cfg: SceneEntityCfg,
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Reward sufficiently long swing phases at touchdown while penalizing shuffling.
+
+    A touchdown earns ``last_air_time - threshold``. Short, high-frequency
+    steps therefore receive a negative reward, while steps that keep a foot in
+    swing past the target duration receive a positive reward. The term is
+    active only for non-standing commands and is evaluated on first contact,
+    so it does not reward simply holding a foot in the air.
+    """
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    first_contact = contact_sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids]
+    last_air_time = contact_sensor.data.last_air_time[:, sensor_cfg.body_ids]
+    reward = torch.sum((last_air_time - threshold) * first_contact, dim=1)
+    is_active_command = (
+        torch.norm(env.command_manager.get_command(command_name)[:, command_slice], dim=1) > command_threshold
+    )
+    return reward * is_active_command
+
+
 def joint_deviation_if_standing(
     env: ManagerBasedRLEnv,
     standing_height_threshold: float,

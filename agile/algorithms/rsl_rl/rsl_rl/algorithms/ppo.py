@@ -20,10 +20,12 @@
 
 from __future__ import annotations
 
+import copy
+from itertools import chain
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from itertools import chain
 
 from rsl_rl.modules import ActorCritic
 from rsl_rl.modules.normalizer import ReturnVarianceNormalization
@@ -66,6 +68,9 @@ class PPO:
         l2c2_cfg: dict | None = None,
         # Reward normalization parameters
         reward_normalization_cfg: dict | None = None,
+        # Fixed reference-policy regularization parameters
+        reference_policy_kl_coef: float = 0.0,
+        reference_policy_kl_cvar_fraction: float = 1.0,
     ):
         # device-related parameters
         self.device = device
@@ -111,7 +116,7 @@ class PPO:
             self.symmetry = symmetry_cfg
         else:
             self.symmetry = None
-            
+
         # L2C2 components
         if l2c2_cfg is not None:
             self.use_l2c2 = True
@@ -156,6 +161,13 @@ class PPO:
         self.schedule = schedule
         self.learning_rate = learning_rate
         self.normalize_advantage_per_mini_batch = normalize_advantage_per_mini_batch
+        if reference_policy_kl_coef < 0.0:
+            raise ValueError("Reference-policy KL coefficient must be non-negative.")
+        if not 0.0 < reference_policy_kl_cvar_fraction <= 1.0:
+            raise ValueError("Reference-policy KL CVaR fraction must lie in (0, 1].")
+        self.reference_policy_kl_coef = reference_policy_kl_coef
+        self.reference_policy_kl_cvar_fraction = reference_policy_kl_cvar_fraction
+        self.reference_policy = None
 
         # Critic warmup
         self.critic_warmup_steps = critic_warmup_steps
@@ -276,6 +288,16 @@ class PPO:
         mean_value_loss = 0
         mean_surrogate_loss = 0
         mean_entropy = 0
+        mean_reference_policy_kl = 0 if self.reference_policy_kl_coef > 0.0 else None
+        mean_reference_policy_kl_all = (
+            0
+            if self.reference_policy_kl_coef > 0.0 and self.reference_policy_kl_cvar_fraction < 1.0
+            else None
+        )
+        if self.reference_policy_kl_coef > 0.0 and self.reference_policy is None:
+            raise RuntimeError(
+                "Reference-policy KL regularization requires capture_reference_policy() before the first update."
+            )
         # -- RND loss
         if self.rnd:
             mean_rnd_loss = 0
@@ -368,6 +390,34 @@ class PPO:
             sigma_batch = self.policy.action_std[:original_batch_size]
             entropy_batch = self.policy.entropy[:original_batch_size]
 
+            # KL to a fixed behavior reference. Unlike PPO's old-policy KL,
+            # this anchor remains unchanged across updates and checkpoints.
+            if self.reference_policy is not None:
+                with torch.no_grad():
+                    self.reference_policy.act(
+                        obs_batch,
+                        masks=masks_batch,
+                        hidden_states=hid_states_batch[0],
+                    )
+                reference_policy_kl = torch.distributions.kl_divergence(
+                    self.policy.distribution,
+                    self.reference_policy.distribution,
+                )
+                if reference_policy_kl.ndim > 1:
+                    reference_policy_kl = reference_policy_kl.sum(dim=-1)
+                reference_policy_kl_all = reference_policy_kl.mean()
+                if self.reference_policy_kl_cvar_fraction < 1.0:
+                    tail_size = max(
+                        1,
+                        int(reference_policy_kl.numel() * self.reference_policy_kl_cvar_fraction),
+                    )
+                    reference_policy_kl = torch.topk(reference_policy_kl.reshape(-1), tail_size).values.mean()
+                else:
+                    reference_policy_kl = reference_policy_kl_all
+            else:
+                reference_policy_kl = None
+                reference_policy_kl_all = None
+
             # KL
             if self.desired_kl is not None and self.schedule == "adaptive":
                 with torch.inference_mode():
@@ -439,6 +489,9 @@ class PPO:
 
             else:
                 loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
+
+            if reference_policy_kl is not None:
+                loss += self.reference_policy_kl_coef * reference_policy_kl
 
             if loss.abs().max() > 1000.0 or loss.isnan().any():
                 print(f"Loss is greater than 1000: {loss.mean()}")
@@ -550,6 +603,10 @@ class PPO:
             mean_value_loss += value_loss.item()
             mean_surrogate_loss += surrogate_loss.item()
             mean_entropy += entropy_batch.mean().item()
+            if mean_reference_policy_kl is not None:
+                mean_reference_policy_kl += reference_policy_kl.item()
+            if mean_reference_policy_kl_all is not None:
+                mean_reference_policy_kl_all += reference_policy_kl_all.item()
             # -- RND loss
             if mean_rnd_loss is not None:
                 mean_rnd_loss += rnd_loss.item()
@@ -565,6 +622,10 @@ class PPO:
         mean_value_loss /= num_updates
         mean_surrogate_loss /= num_updates
         mean_entropy /= num_updates
+        if mean_reference_policy_kl is not None:
+            mean_reference_policy_kl /= num_updates
+        if mean_reference_policy_kl_all is not None:
+            mean_reference_policy_kl_all /= num_updates
         # -- For RND
         if mean_rnd_loss is not None:
             mean_rnd_loss /= num_updates
@@ -591,11 +652,29 @@ class PPO:
         if self.use_l2c2:
             loss_dict["l2c2_actor"] = mean_l2c2_actor_loss
             loss_dict["l2c2_critic"] = mean_l2c2_critic_loss
+        if mean_reference_policy_kl is not None:
+            loss_dict["reference_policy_kl"] = mean_reference_policy_kl
+        if mean_reference_policy_kl_all is not None:
+            loss_dict["reference_policy_kl_mean"] = mean_reference_policy_kl_all
         return loss_dict
 
     """
     Helper functions
     """
+
+    def capture_reference_policy(self, state_dict=None):
+        """Freeze a behavior-policy snapshot used by the fixed KL penalty."""
+
+        if self.reference_policy_kl_coef == 0.0:
+            return
+        if self.policy.is_recurrent:
+            raise NotImplementedError("Fixed reference-policy KL is not implemented for recurrent policies.")
+        self.reference_policy = copy.deepcopy(self.policy)
+        if state_dict is not None:
+            self.reference_policy.load_state_dict(state_dict)
+        self.reference_policy.to(self.device)
+        self.reference_policy.eval()
+        self.reference_policy.requires_grad_(False)
 
     def broadcast_parameters(self):
         """Broadcast model parameters to all GPUs."""

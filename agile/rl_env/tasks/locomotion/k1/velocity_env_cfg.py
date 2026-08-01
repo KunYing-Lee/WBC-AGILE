@@ -754,3 +754,40 @@ class K1LowerVelocityEnvCfg(ManagerBasedRLEnvCfg):
         self.observations.policy.enable_corruption = False
         self.observations.critic.concatenate_terms = True
         self.observations.eval = mdp.EvaluationObservationsCfg()
+
+
+@configclass
+class K1LowerVelocityStrideFinetuneEnvCfg(K1LowerVelocityEnvCfg):
+    """Model-5750 warm-start environment focused on eliminating shuffling."""
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # Start inside the command envelope already demonstrated by model_5750.
+        # The existing success-gated curriculum then expands to the unchanged
+        # full K1 contract instead of exposing a warm-start actor to an abrupt
+        # command-distribution shift.
+        start_ranges = {
+            "lin_vel_x": (-0.55, 0.81),
+            "lin_vel_y": (-0.75, 0.75),
+            "ang_vel_z": (-1.10, 1.10),
+        }
+        command_ranges = self.commands.base_velocity.ranges
+        command_ranges.lin_vel_x = start_ranges["lin_vel_x"]
+        command_ranges.lin_vel_y = start_ranges["lin_vel_y"]
+        command_ranges.ang_vel_z = start_ranges["ang_vel_z"]
+        self.curriculum.velocity_command_ranges.params["start_ranges"] = start_ranges
+
+        # Replace the always-nonnegative air-time term with a touchdown event
+        # objective that explicitly penalizes short swing phases.
+        self.rewards.feet_air_time = RewTerm(
+            func=mdp.feet_air_time_thresholded_command,
+            weight=2.0,
+            params={
+                "command_name": "base_velocity",
+                "command_slice": slice(0, 3),
+                "threshold": 0.25,
+                "command_threshold": 0.1,
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*foot_link.*"),
+            },
+        )

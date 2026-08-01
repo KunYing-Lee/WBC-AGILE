@@ -23,8 +23,9 @@ from __future__ import annotations
 import os
 import statistics
 import time
-import torch
 from collections import deque
+
+import torch
 from tensordict.tensordict import TensorDict
 
 import rsl_rl
@@ -37,7 +38,6 @@ from rsl_rl.modules import (
     StudentTeacher,
     StudentTeacherRecurrent,
     StudentTrainedTeacher,
-    StudentTrainedTeacherRecurrent,
 )
 from rsl_rl.utils import store_code_state
 
@@ -449,7 +449,7 @@ class OnPolicyRunner:
                 )
 
         str = f" \033[1m Learning iteration {locs['it']}/{locs['tot_iter']} \033[0m "
-        
+
         # Upload video to wandb
         if self.logger_type == "wandb" and not self.disable_logs:
             # use video_fps from cfg if available or default to 30
@@ -514,6 +514,8 @@ class OnPolicyRunner:
             "iter": self.current_learning_iteration,
             "infos": infos,
         }
+        if getattr(self.alg, "reference_policy", None) is not None:
+            saved_dict["reference_policy_state_dict"] = self.alg.reference_policy.state_dict()
         # -- Save RND model if used
         if self.alg.rnd:
             saved_dict["rnd_state_dict"] = self.alg.rnd.state_dict()
@@ -537,6 +539,12 @@ class OnPolicyRunner:
         loaded_dict = torch.load(path, map_location=self.device, weights_only=False)
         # -- Load model
         resumed_training = self.alg.policy.load_state_dict(loaded_dict["model_state_dict"])
+        if getattr(self.alg, "reference_policy_kl_coef", 0.0) > 0.0:
+            if "reference_policy_state_dict" not in loaded_dict:
+                raise RuntimeError(
+                    "Checkpoint is missing reference_policy_state_dict; exact anchored-policy resume is impossible."
+                )
+            self.alg.capture_reference_policy(loaded_dict["reference_policy_state_dict"])
         # -- Load RND model if used
         if self.alg.rnd:
             self.alg.rnd.load_state_dict(loaded_dict["rnd_state_dict"])

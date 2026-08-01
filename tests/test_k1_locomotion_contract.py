@@ -19,6 +19,8 @@ AXIS_EVAL_PATH = ROOT / "agile/algorithms/evaluation/configs/k1_velocity_axes_v1
 SEQUENCE_EVAL_PATH = ROOT / "agile/algorithms/evaluation/configs/k1_velocity_sequence_v1.yaml"
 CURRICULUM_PATH = ROOT / "agile/rl_env/mdp/curriculums/task_curriculum.py"
 CHECKPOINT_STATE_PATH = ROOT / "agile/rl_env/rsl_rl/checkpoint_state.py"
+PPO_CFG_PATH = ROOT / "agile/rl_env/tasks/locomotion/k1/agents/rsl_rl_ppo_cfg.py"
+REWARDS_PATH = ROOT / "agile/rl_env/mdp/rewards/aestetic_rewards.py"
 VECENV_WRAPPER_PATH = ROOT / "agile/rl_env/rsl_rl/vecenv_wrapper.py"
 TRAIN_PATH = ROOT / "scripts/train.py"
 EVAL_PATH = ROOT / "scripts/eval.py"
@@ -263,6 +265,73 @@ def test_velocity_k1_task_is_registered() -> None:
     }
     assert "K1LowerVelocityEnvCfg" in entries["env_cfg_entry_point"]
     assert "K1VelocityPpoRunnerCfg" in entries["rsl_rl_cfg_entry_point"]
+
+
+def test_k1_stride_finetune_is_a_separate_actor_only_training_contract() -> None:
+    tree = _tree(TASK_PATH)
+    env = _class(tree, "K1LowerVelocityStrideFinetuneEnvCfg")
+    source = ast.unparse(env)
+    assert "K1LowerVelocityEnvCfg" in ast.unparse(env.bases)
+    assert "'lin_vel_x': (-0.55, 0.81)" in source
+    assert "'lin_vel_y': (-0.75, 0.75)" in source
+    assert "'ang_vel_z': (-1.1, 1.1)" in source
+    assert "func=mdp.feet_air_time_thresholded_command" in source
+    assert "weight=2.0" in source
+    assert "'threshold': 0.25" in source
+    assert "'command_slice': slice(0, 3)" in source
+
+    runner = _class(_tree(PPO_CFG_PATH), "K1VelocityStrideFinetunePpoRunnerCfg")
+    runner_source = ast.unparse(runner)
+    assert "noise_std_type='log'" in runner_source
+    assert "log_std_range=(math.log(0.05), math.log(0.6))" in runner_source
+    assert "learning_rate=0.0003" in runner_source
+    assert "entropy_coef=0.001" in runner_source
+    assert "reference_policy_kl_coef=1.0" in runner_source
+
+    registrations = [
+        call
+        for call in ast.walk(_tree(REGISTER_PATH))
+        if isinstance(call, ast.Call)
+        and ast.unparse(call.func) == "gym.register"
+        and ast.literal_eval(_keyword(call, "id")) == "Velocity-K1-Stride-Finetune-v0"
+    ]
+    assert len(registrations) == 1
+
+
+def test_thresholded_air_time_penalizes_short_touchdowns_without_dense_hold_reward() -> None:
+    reward_function = next(
+        node
+        for node in _tree(REWARDS_PATH).body
+        if isinstance(node, ast.FunctionDef) and node.name == "feet_air_time_thresholded_command"
+    )
+    source = ast.unparse(reward_function)
+    assert "contact_sensor.compute_first_contact(env.step_dt)" in source
+    assert "contact_sensor.data.last_air_time" in source
+    assert "(last_air_time - threshold) * first_contact" in source
+    assert "torch.norm(env.command_manager.get_command(command_name)[:, command_slice], dim=1)" in source
+
+
+def test_actor_only_warm_start_is_sha_checked_and_reinitializes_training_state() -> None:
+    runner = _class(_tree(CHECKPOINT_STATE_PATH), "EnvironmentStateOnPolicyRunner")
+    method = next(node for node in runner.body if isinstance(node, ast.FunctionDef) and node.name == "load_actor_only")
+    source = ast.unparse(method)
+    assert "actual_sha256 = checkpoint_sha256(path)" in source
+    assert "actual_sha256 != expected_sha256" in source
+    assert "key.startswith('actor.')" in source
+    assert "self.alg.policy.load_state_dict(source_actor_state, strict=False)" in source
+    assert "self.alg.capture_reference_policy()" in source
+    for component in (
+        "critic",
+        "optimizer",
+        "exploration_distribution",
+        "curriculum_state",
+        "iteration_counter",
+    ):
+        assert repr(component) in source
+
+    train_source = ast.unparse(_tree(TRAIN_PATH))
+    assert "runner.load_actor_only(parent_path, args_cli.warm_start_actor_sha256)" in train_source
+    assert "Exact --resume and actor-only warm start are mutually exclusive." in TRAIN_PATH.read_text()
 
 
 def test_k1_sim2mujoco_schedules_cover_command_box() -> None:

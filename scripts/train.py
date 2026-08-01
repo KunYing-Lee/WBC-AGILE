@@ -48,6 +48,18 @@ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument("--max_iterations", type=int, default=None, help="RL Policy training iterations.")
 parser.add_argument(
+    "--warm_start_actor_checkpoint",
+    type=str,
+    default=None,
+    help="Parent checkpoint whose actor weights initialize a fresh training run.",
+)
+parser.add_argument(
+    "--warm_start_actor_sha256",
+    type=str,
+    default=None,
+    help="Required SHA256 for --warm_start_actor_checkpoint.",
+)
+parser.add_argument(
     "--distributed", action="store_true", default=False, help="Run training with multiple GPUs or nodes."
 )
 # append RSL-RL cli arguments
@@ -59,6 +71,11 @@ AppLauncher.add_app_launcher_args(parser)
 # 2. hydra_args: Contains any additional arguments not defined in our parser
 #    These will be passed to Hydra for configuration management
 args_cli, hydra_args = parser.parse_known_args()
+
+if (args_cli.warm_start_actor_checkpoint is None) != (args_cli.warm_start_actor_sha256 is None):
+    parser.error("--warm_start_actor_checkpoint and --warm_start_actor_sha256 must be provided together.")
+if args_cli.resume and args_cli.warm_start_actor_checkpoint is not None:
+    parser.error("Exact --resume and actor-only warm start are mutually exclusive.")
 
 # always enable cameras to record video
 if args_cli.video:
@@ -220,6 +237,11 @@ def main(
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         # load previously trained model
         runner.load(resume_path, load_optimizer=agent_cfg.load_optimizer)
+    elif args_cli.warm_start_actor_checkpoint is not None:
+        parent_path = os.path.abspath(args_cli.warm_start_actor_checkpoint)
+        print(f"[INFO]: Actor-only warm start from: {parent_path}")
+        provenance = runner.load_actor_only(parent_path, args_cli.warm_start_actor_sha256)
+        print(f"[INFO]: Verified parent checkpoint SHA256: {provenance['sha256']}")
 
     # Preserve every rank's effective device and seed without allowing a
     # non-primary rank to overwrite the canonical configuration.
