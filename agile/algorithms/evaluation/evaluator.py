@@ -86,7 +86,7 @@ class PolicyEvaluator:
         self._metrics = MotionMetricsAnalyzer(
             max_episode_length=self._max_episode_len,
             joint_groups=self._joint_groups,
-            control_dt=getattr(env, "step_dt", None),
+            control_dt=getattr(self._env, "step_dt", None),
             verbose=verbose,
         )
         self._metrics_path = metrics_path
