@@ -22,6 +22,7 @@ CHECKPOINT_STATE_PATH = ROOT / "agile/rl_env/rsl_rl/checkpoint_state.py"
 VECENV_WRAPPER_PATH = ROOT / "agile/rl_env/rsl_rl/vecenv_wrapper.py"
 TRAIN_PATH = ROOT / "scripts/train.py"
 EVAL_PATH = ROOT / "scripts/eval.py"
+VELOCITY_SCHEDULER_PATH = ROOT / "agile/algorithms/evaluation/velocity_height_scheduler.py"
 
 
 def _tree(path: Path) -> ast.Module:
@@ -144,6 +145,11 @@ def test_k1_evaluation_restores_checkpoint_curriculum_without_training_topology(
     restore_source = ast.unparse(restore)
     assert "require_topology_match: bool=True" in restore_source
     assert "if require_topology_match and saved_contract != expected_contract" in restore_source
+
+    scheduler_source = ast.unparse(_tree(VELOCITY_SCHEDULER_PATH))
+    assert "command_term = self.env.command_manager.get_term('base_velocity')" in scheduler_source
+    assert "cfg = command_term.cfg.ranges" in scheduler_source
+    assert "self.env.cfg.commands.base_velocity.ranges" not in scheduler_source
 
 
 def test_k1_locomotion_controls_exact_leg_contract() -> None:

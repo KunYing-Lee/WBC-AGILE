@@ -104,7 +104,8 @@ class VelocityHeightScheduler:
             RuntimeError: If command ranges cannot be extracted from environment config
         """
         try:
-            cfg = self.env.cfg.commands.base_velocity.ranges
+            command_term = self.env.command_manager.get_term("base_velocity")
+            cfg = command_term.cfg.ranges
 
             # Dynamically extract all available command fields
             command_ranges = {}
@@ -129,8 +130,8 @@ class VelocityHeightScheduler:
 
         except AttributeError as e:
             raise RuntimeError(
-                f"Failed to extract command ranges from environment config. "
-                f"Ensure the environment has 'cfg.commands.base_velocity.ranges' defined. "
+                f"Failed to extract command ranges from the runtime command term. "
+                f"Ensure the environment has a 'base_velocity' command with ranges. "
                 f"Original error: {e}"
             ) from e
 
