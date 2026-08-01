@@ -598,8 +598,7 @@ class adaptive_force_decay(ManagerTermBase):
         elif metric_name == "successful_termination_ratio":
             if successful_termination_term is None:
                 raise ValueError(
-                    "successful_termination_term is required when "
-                    "metric_name='successful_termination_ratio'"
+                    "successful_termination_term is required when metric_name='successful_termination_ratio'"
                 )
             metric = float(env.termination_manager.get_term(successful_termination_term)[env_ids].float().mean().item())
         elif metric_name == "velocity_xy":
@@ -933,6 +932,92 @@ class velocity_command_range_step(ManagerTermBase):
             new_range = (s[0] + (t[0] - s[0]) * scale, s[1] + (t[1] - s[1]) * scale)
             setattr(command.cfg.ranges, attr, new_range)
         return scale
+
+
+class velocity_command_range_success(ManagerTermBase):
+    """Expand velocity ranges only after sustained tracking and survival.
+
+    The curriculum evaluates planar and yaw commands on the populations where
+    those axes are active.  A stage advances only after both tracking EMAs and
+    the mean episode-age ratio satisfy their gates for a contiguous hold
+    window.  Falling or losing tracking resets the hold counter, so elapsed
+    wall-clock training alone can never make the task harder.
+    """
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self.command_name = cfg.params["command_name"]
+        self.start_ranges = cfg.params["start_ranges"]
+        self.terminal_ranges = cfg.params["terminal_ranges"]
+        self._scale = 0.0
+        self._planar_error_ema: float | None = None
+        self._yaw_error_ema: float | None = None
+        self._successful_steps = 0
+        self._update_ranges(env)
+
+    def _update_ranges(self, env: ManagerBasedRLEnv) -> None:
+        command = env.command_manager.get_term(self.command_name)
+        for attr, start in self.start_ranges.items():
+            terminal = self.terminal_ranges[attr]
+            value = (
+                start[0] + (terminal[0] - start[0]) * self._scale,
+                start[1] + (terminal[1] - start[1]) * self._scale,
+            )
+            setattr(command.cfg.ranges, attr, value)
+
+    def __call__(
+        self,
+        env: ManagerBasedRLEnv,
+        env_ids: Sequence[int],  # noqa: ARG002
+        command_name: str,  # noqa: ARG002
+        start_ranges: dict[str, tuple[float, float]],  # noqa: ARG002
+        terminal_ranges: dict[str, tuple[float, float]],  # noqa: ARG002
+        planar_error_threshold: float,
+        yaw_error_threshold: float,
+        minimum_episode_age_ratio: float,
+        ema_alpha: float,
+        hold_steps: int,
+        scale_increment: float,
+    ) -> float:
+        if not 0.0 < ema_alpha <= 1.0:
+            raise ValueError("ema_alpha must be in (0, 1]")
+        if hold_steps <= 0 or not 0.0 < scale_increment <= 1.0:
+            raise ValueError("hold_steps must be positive and scale_increment must be in (0, 1]")
+
+        command = env.command_manager.get_command(self.command_name)
+        robot = env.scene["robot"]
+        planar_active = torch.linalg.vector_norm(command[:, :2], dim=1) > 0.1
+        yaw_active = torch.abs(command[:, 2]) > 0.1
+        if not planar_active.any() or not yaw_active.any():
+            self._successful_steps = 0
+            return self._scale
+
+        planar_error = torch.linalg.vector_norm(
+            command[planar_active, :2] - robot.data.root_lin_vel_b[planar_active, :2], dim=1
+        ).mean()
+        yaw_error = torch.abs(command[yaw_active, 2] - robot.data.root_ang_vel_b[yaw_active, 2]).mean()
+        planar_value = float(planar_error.item())
+        yaw_value = float(yaw_error.item())
+        if self._planar_error_ema is None:
+            self._planar_error_ema = planar_value
+            self._yaw_error_ema = yaw_value
+        else:
+            self._planar_error_ema = (1.0 - ema_alpha) * self._planar_error_ema + ema_alpha * planar_value
+            self._yaw_error_ema = (1.0 - ema_alpha) * self._yaw_error_ema + ema_alpha * yaw_value
+
+        episode_age_ratio = float((env.episode_length_buf.float().mean() / max(env.max_episode_length, 1)).item())
+        successful = (
+            self._planar_error_ema <= planar_error_threshold
+            and self._yaw_error_ema <= yaw_error_threshold
+            and episode_age_ratio >= minimum_episode_age_ratio
+        )
+        self._successful_steps = self._successful_steps + 1 if successful else 0
+
+        if self._successful_steps >= hold_steps and self._scale < 1.0:
+            self._scale = min(1.0, self._scale + scale_increment)
+            self._successful_steps = 0
+            self._update_ranges(env)
+        return self._scale
 
 
 class update_event_param_after_curriculum(ManagerTermBase):

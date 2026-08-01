@@ -17,11 +17,13 @@
 from agile.common.motion_data import MotionData
 
 from .commands import (
+    StratifiedUniformVelocityCommand,
     UniformNullVelocityCommand,
     UniformVelocityBaseHeightCommand,
     UniformVelocityGaitBaseHeightCommand,
 )
 from .commands_cfg import (
+    StratifiedUniformVelocityCommandCfg,
     UniformNullVelocityCommandCfg,
     UniformVelocityBaseHeightCommandCfg,
     UniformVelocityGaitBaseHeightCommandCfg,
@@ -34,6 +36,8 @@ from .tracking_commands import TrackingCommand
 from .tracking_commands_cfg import TrackingCommandCfg
 
 __all__ = [
+    "StratifiedUniformVelocityCommand",
+    "StratifiedUniformVelocityCommandCfg",
     "UniformNullVelocityCommand",
     "UniformNullVelocityCommandCfg",
     "UniformVelocityBaseHeightCommand",

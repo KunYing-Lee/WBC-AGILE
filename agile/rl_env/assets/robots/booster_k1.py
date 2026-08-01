@@ -92,6 +92,18 @@ class _Motor:
     def damping(self) -> float:
         return 2.0 * self.damping_ratio * self.armature * (2.0 * pi * self.natural_frequency_hz)
 
+    @property
+    def action_scale(self) -> float:
+        """Joint offset that requests 25% of the zero-speed effort limit.
+
+        A uniform position scale is not compatible with the motor-specific
+        stiffness values below.  Normalizing by stiffness gives every joint
+        the same physically meaningful exploration authority while preserving
+        the measured torque limits.
+        """
+
+        return 0.25 * self.effort / self.stiffness
+
 
 _LEG_MOTORS = {
     ".*_Hip_Pitch": _Motor(68.0, 14.66, 1.88, 0.0478125),
@@ -101,6 +113,9 @@ _LEG_MOTORS = {
     ".*_Ankle_Pitch": _Motor(38.3, 17.59, 7.85, 0.0565056),
     ".*_Ankle_Roll": _Motor(38.3, 17.59, 7.85, 0.0565056),
 }
+
+K1_LOCOMOTION_ACTION_SCALE = {pattern: motor.action_scale for pattern, motor in _LEG_MOTORS.items()}
+"""Per-joint target offsets normalized to 25% of each motor's effort limit."""
 
 
 def _leg_parameter(name: str) -> dict[str, float]:

@@ -29,6 +29,7 @@ from isaaclab.utils import math as math_utils
 # Only import the command class during type checking
 if TYPE_CHECKING:
     from .commands_cfg import (
+        StratifiedUniformVelocityCommandCfg,
         UniformNullVelocityCommandCfg,
         UniformVelocityBaseHeightCommandCfg,
         UniformVelocityGaitBaseHeightCommandCfg,
@@ -109,6 +110,81 @@ class UniformNullVelocityCommand(UniformVelocityCommand):
         # set small velocity samples to zer
         too_small = self.vel_command_b.norm(dim=1) < self.min_vel_norm
         self.vel_command_b[too_small] = 0
+
+
+class StratifiedUniformVelocityCommand(UniformNullVelocityCommand):
+    """Sample a controlled mixture of pure-axis and combined velocity commands.
+
+    Uniform sampling over all three axes makes almost every non-standing
+    command a compound command.  This term preserves the requested marginal
+    ranges while ensuring that each independently controllable axis receives a
+    fixed share of the training population.
+    """
+
+    cfg: StratifiedUniformVelocityCommandCfg
+
+    def __init__(self, cfg: StratifiedUniformVelocityCommandCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        weights = torch.tensor(cfg.mode_weights, dtype=torch.float, device=self.device)
+        if (
+            weights.shape != (4,)
+            or torch.any(weights < 0.0)
+            or not torch.isclose(weights.sum(), torch.tensor(1.0, device=self.device))
+        ):
+            raise ValueError("mode_weights must contain four non-negative values that sum to one")
+        if len(cfg.pure_command_min_magnitudes) != 3 or any(value < 0.0 for value in cfg.pure_command_min_magnitudes):
+            raise ValueError("pure_command_min_magnitudes must contain three non-negative values")
+        self._mode_weights = weights
+
+    def _sample_nonzero_axis(self, count: int, axis: int) -> torch.Tensor:
+        """Sample one axis uniformly outside the configured zero dead-band."""
+
+        if count == 0:
+            return torch.empty(0, device=self.device)
+
+        range_name = ("lin_vel_x", "lin_vel_y", "ang_vel_z")[axis]
+        lower, upper = getattr(self.cfg.ranges, range_name)
+        minimum = self.cfg.pure_command_min_magnitudes[axis]
+        negative_width = max(min(-minimum, upper) - lower, 0.0)
+        positive_width = max(upper - max(minimum, lower), 0.0)
+        total_width = negative_width + positive_width
+        if total_width <= 0.0:
+            raise ValueError(
+                f"{range_name} range {(lower, upper)} contains no values outside the minimum magnitude {minimum}"
+            )
+
+        interval_choice = torch.rand(count, device=self.device) * total_width
+        sample = torch.empty(count, device=self.device)
+        negative = interval_choice < negative_width
+        if negative.any():
+            sample[negative] = lower + torch.rand(int(negative.sum().item()), device=self.device) * negative_width
+        if (~negative).any():
+            positive_lower = max(minimum, lower)
+            sample[~negative] = (
+                positive_lower + torch.rand(int((~negative).sum().item()), device=self.device) * positive_width
+            )
+        return sample
+
+    def _resample_command(self, env_ids: Sequence[int]) -> None:
+        super()._resample_command(env_ids)
+        if len(env_ids) == 0:
+            return
+
+        env_ids_tensor = torch.as_tensor(env_ids, dtype=torch.long, device=self.device)
+        commands = self.vel_command_b[env_ids_tensor]
+        moving = torch.linalg.vector_norm(commands, dim=1) > 0.0
+        moving_ids = env_ids_tensor[moving]
+        if moving_ids.numel() == 0:
+            return
+
+        modes = torch.multinomial(self._mode_weights, moving_ids.numel(), replacement=True)
+        for axis in range(3):
+            selected = modes == axis
+            selected_ids = moving_ids[selected]
+            if selected_ids.numel() == 0:
+                continue
+            self.vel_command_b[selected_ids] = 0.0
+            self.vel_command_b[selected_ids, axis] = self._sample_nonzero_axis(selected_ids.numel(), axis)
 
 
 class UniformVelocityBaseHeightCommand(UniformNullVelocityCommand):

@@ -47,11 +47,7 @@ def _keyword(call: ast.Call, name: str) -> ast.expr:
 def _top_level_literals(tree: ast.Module) -> dict[str, object]:
     values: dict[str, object] = {}
     for node in tree.body:
-        if (
-            isinstance(node, ast.Assign)
-            and len(node.targets) == 1
-            and isinstance(node.targets[0], ast.Name)
-        ):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             try:
                 values[node.targets[0].id] = ast.literal_eval(node.value)
             except (ValueError, TypeError):
@@ -64,34 +60,35 @@ def test_k1_velocity_command_bounds() -> None:
     assert values["K1_LIN_VEL_X_RANGE"] == (-1.0, 1.5)
     assert values["K1_LIN_VEL_Y_RANGE"] == (-1.5, 1.5)
     assert values["K1_ANG_VEL_Z_RANGE"] == (-2.0, 2.0)
-    assert values["K1_INITIAL_LIN_VEL_X_RANGE"] == (-0.5, 0.5)
-    assert values["K1_INITIAL_LIN_VEL_Y_RANGE"] == (-0.5, 0.5)
-    assert values["K1_INITIAL_ANG_VEL_Z_RANGE"] == (-1.0, 1.0)
-    assert values["K1_COMMAND_CURRICULUM_STEPS"] == 1_000_000
+    assert values["K1_INITIAL_LIN_VEL_X_RANGE"] == (-0.25, 0.35)
+    assert values["K1_INITIAL_LIN_VEL_Y_RANGE"] == (-0.25, 0.25)
+    assert values["K1_INITIAL_ANG_VEL_Z_RANGE"] == (-0.5, 0.5)
+    assert values["K1_COMMAND_MODE_WEIGHTS"] == (0.30, 0.25, 0.20, 0.25)
+    assert values["K1_COMMAND_MIN_MAGNITUDES"] == (0.10, 0.10, 0.20)
 
 
 def test_k1_velocity_command_curriculum_expands_to_full_contract() -> None:
     curriculum = _class(_tree(TASK_PATH), "CurriculumCfg")
     term = _call_assignment(curriculum, "velocity_command_ranges")
-    assert ast.unparse(_keyword(term, "func")) == "mdp.velocity_command_range_step"
+    assert ast.unparse(_keyword(term, "func")) == "mdp.velocity_command_range_success"
 
     params = _keyword(term, "params")
     assert isinstance(params, ast.Dict)
     entries = {
-        ast.literal_eval(key): value
-        for key, value in zip(params.keys, params.values, strict=True)
-        if key is not None
+        ast.literal_eval(key): value for key, value in zip(params.keys, params.values, strict=True) if key is not None
     }
     assert ast.literal_eval(entries["command_name"]) == "base_velocity"
-    assert ast.literal_eval(entries["start_step"]) == 0
-    assert ast.unparse(entries["num_steps"]) == "K1_COMMAND_CURRICULUM_STEPS"
+    assert ast.literal_eval(entries["planar_error_threshold"]) == 0.18
+    assert ast.literal_eval(entries["yaw_error_threshold"]) == 0.25
+    assert ast.literal_eval(entries["minimum_episode_age_ratio"]) == 0.30
+    assert ast.literal_eval(entries["hold_steps"]) == 2_500
+    assert ast.literal_eval(entries["scale_increment"]) == 0.10
     assert ast.unparse(entries["start_ranges"]) == (
         "{'lin_vel_x': K1_INITIAL_LIN_VEL_X_RANGE, 'lin_vel_y': K1_INITIAL_LIN_VEL_Y_RANGE, "
         "'ang_vel_z': K1_INITIAL_ANG_VEL_Z_RANGE}"
     )
     assert ast.unparse(entries["terminal_ranges"]) == (
-        "{'lin_vel_x': K1_LIN_VEL_X_RANGE, 'lin_vel_y': K1_LIN_VEL_Y_RANGE, "
-        "'ang_vel_z': K1_ANG_VEL_Z_RANGE}"
+        "{'lin_vel_x': K1_LIN_VEL_X_RANGE, 'lin_vel_y': K1_LIN_VEL_Y_RANGE, 'ang_vel_z': K1_ANG_VEL_Z_RANGE}"
     )
 
 
@@ -99,8 +96,52 @@ def test_k1_locomotion_controls_exact_leg_contract() -> None:
     actions = _class(_tree(TASK_PATH), "ActionsCfg")
     action = _call_assignment(actions, "joint_pos")
     assert ast.unparse(_keyword(action, "joint_names")) == "booster_k1.K1_LEG_JOINT_NAMES"
-    assert ast.literal_eval(_keyword(action, "scale")) == 0.25
+    assert ast.unparse(_keyword(action, "scale")) == "booster_k1.K1_LOCOMOTION_ACTION_SCALE"
     assert ast.literal_eval(_keyword(action, "preserve_order")) is True
+
+
+def test_k1_training_holds_upper_body_and_stratifies_commands() -> None:
+    tree = _tree(TASK_PATH)
+    actions = _class(tree, "ActionsCfg")
+    action_source = ast.unparse(actions)
+    assert "random_pos = None" in action_source
+    assert "upper_body_hold = mdp.HoldJointPositionActionCfg" in action_source
+    assert "joint_names=booster_k1.K1_HEAD_JOINT_NAMES + booster_k1.K1_ARM_JOINT_NAMES" in action_source
+
+    commands = _class(tree, "CommandsCfg")
+    command = _call_assignment(commands, "base_velocity")
+    assert ast.unparse(command.func) == "mdp.StratifiedUniformVelocityCommandCfg"
+    assert ast.unparse(_keyword(command, "mode_weights")) == "K1_COMMAND_MODE_WEIGHTS"
+    assert ast.literal_eval(_keyword(command, "rel_standing_envs")) == 0.10
+
+
+def test_k1_nominal_first_disables_dr_and_uses_dense_rewards() -> None:
+    tree = _tree(TASK_PATH)
+    events = _class(tree, "NominalLocomotionEventCfg")
+    event_source = ast.unparse(events)
+    for name in (
+        "randomize_physics_material",
+        "randomize_actuator_gains",
+        "randomize_base_mass",
+        "randomize_base_com",
+        "apply_external_force_torque",
+        "push_robot",
+    ):
+        assert f"{name} = None" in event_source
+
+    rewards = _class(tree, "RewardsCfg")
+    linear_tracking = _call_assignment(rewards, "track_lin_vel_xy_exp")
+    linear_params = ast.literal_eval(_keyword(linear_tracking, "params"))
+    assert linear_params["std"] == 0.5
+    action_rate = _call_assignment(rewards, "action_rate")
+    assert ast.literal_eval(_keyword(action_rate, "weight")) == -0.005
+    _call_assignment(rewards, "feet_air_time")
+
+    env = _class(tree, "K1LowerVelocityEnvCfg")
+    post_init = next(node for node in env.body if isinstance(node, ast.FunctionDef) and node.name == "__post_init__")
+    source = ast.unparse(post_init)
+    assert "self.scene.terrain.terrain_type = 'plane'" in source
+    assert "self.scene.terrain.terrain_generator = None" in source
 
 
 def test_k1_locomotion_uses_deployed_neutral_leg_posture() -> None:
@@ -127,16 +168,12 @@ def test_k1_locomotion_uses_deployed_neutral_leg_posture() -> None:
 
 def test_k1_locomotion_rates_match_wbc_agile_contract() -> None:
     env = _class(_tree(TASK_PATH), "K1LowerVelocityEnvCfg")
-    post_init = next(
-        node for node in env.body if isinstance(node, ast.FunctionDef) and node.name == "__post_init__"
-    )
+    post_init = next(node for node in env.body if isinstance(node, ast.FunctionDef) and node.name == "__post_init__")
     wanted = {"self.controller_freq", "self.physics_freq"}
     assignments = {
         ast.unparse(node.targets[0]): ast.literal_eval(node.value)
         for node in post_init.body
-        if isinstance(node, ast.Assign)
-        and len(node.targets) == 1
-        and ast.unparse(node.targets[0]) in wanted
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and ast.unparse(node.targets[0]) in wanted
     }
     assert assignments["self.controller_freq"] == 50.0
     assert assignments["self.physics_freq"] == 200.0
@@ -160,21 +197,14 @@ def test_velocity_k1_task_is_registered() -> None:
 def test_k1_sim2mujoco_schedules_cover_command_box() -> None:
     schedules = yaml.safe_load(COMMAND_SCHEDULE_PATH.read_text(encoding="utf-8"))
     commands = {
-        (float(entry[1]), float(entry[2]), float(entry[3]))
-        for entries in schedules.values()
-        for entry in entries
+        (float(entry[1]), float(entry[2]), float(entry[3])) for entries in schedules.values() for entry in entries
     }
 
     assert {command[0] for command in commands} >= {-1.0, 1.5}
     assert {command[1] for command in commands} >= {-1.5, 1.5}
     assert {command[2] for command in commands} >= {-2.0, 2.0}
 
-    expected_corners = {
-        (vx, vy, wz)
-        for vx in (-1.0, 1.5)
-        for vy in (-1.5, 1.5)
-        for wz in (-2.0, 2.0)
-    }
+    expected_corners = {(vx, vy, wz) for vx in (-1.0, 1.5) for vy in (-1.5, 1.5) for wz in (-2.0, 2.0)}
     assert commands >= expected_corners
 
 

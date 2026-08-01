@@ -22,6 +22,7 @@ from isaaclab.envs.mdp.commands import UniformVelocityCommandCfg
 from isaaclab.utils import configclass
 
 from agile.rl_env.mdp.commands.commands import (
+    StratifiedUniformVelocityCommand,
     UniformNullVelocityCommand,
     UniformVelocityBaseHeightCommand,
     UniformVelocityGaitBaseHeightCommand,
@@ -50,6 +51,19 @@ class UniformNullVelocityCommandCfg(UniformVelocityCommandCfg):
 
     min_vel_norm: float = 0.1
     """Minimum velocity norm,velocity commands with a norm less than this value are set to 0"""
+
+
+@configclass
+class StratifiedUniformVelocityCommandCfg(UniformNullVelocityCommandCfg):
+    """Uniform velocity commands stratified into pure-axis and mixed modes."""
+
+    class_type: type = StratifiedUniformVelocityCommand
+
+    mode_weights: tuple[float, float, float, float] = (0.30, 0.25, 0.20, 0.25)
+    """Probabilities for pure-x, pure-y, pure-yaw and mixed commands."""
+
+    pure_command_min_magnitudes: tuple[float, float, float] = (0.10, 0.10, 0.20)
+    """Minimum non-zero magnitude for each pure command axis."""
 
 
 @configclass
