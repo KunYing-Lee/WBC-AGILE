@@ -231,13 +231,13 @@ class EnvironmentStateOnPolicyRunner(OnPolicyRunner):
         if shape_mismatches:
             raise RuntimeError(f"Parent actor tensor-shape mismatch: {shape_mismatches}.")
 
-        load_result = self.alg.policy.load_state_dict(source_actor_state, strict=False)
-        expected_missing = sorted(set(target_state) - target_actor_keys)
-        if load_result.unexpected_keys or sorted(load_result.missing_keys) != expected_missing:
-            raise RuntimeError(
-                "Actor-only load produced an unexpected state-dict result: "
-                f"missing={load_result.missing_keys}, unexpected={load_result.unexpected_keys}."
-            )
+        self.alg.policy.load_state_dict(source_actor_state, strict=False)
+        loaded_state = self.alg.policy.state_dict()
+        unequal_actor_keys = [
+            key for key in sorted(target_actor_keys) if not torch.equal(loaded_state[key], source_actor_state[key])
+        ]
+        if unequal_actor_keys:
+            raise RuntimeError(f"Actor-only load verification failed for tensors: {unequal_actor_keys}.")
 
         if getattr(self.alg, "reference_policy_kl_coef", 0.0) > 0.0:
             self.alg.capture_reference_policy()

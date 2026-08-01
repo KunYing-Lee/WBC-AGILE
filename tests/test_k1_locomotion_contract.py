@@ -319,6 +319,7 @@ def test_actor_only_warm_start_is_sha_checked_and_reinitializes_training_state()
     assert "actual_sha256 != expected_sha256" in source
     assert "key.startswith('actor.')" in source
     assert "self.alg.policy.load_state_dict(source_actor_state, strict=False)" in source
+    assert "torch.equal(loaded_state[key], source_actor_state[key])" in source
     assert "self.alg.capture_reference_policy()" in source
     for component in (
         "critic",
