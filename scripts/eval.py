@@ -260,6 +260,37 @@ def _apply_env_overrides(env_cfg, eval_config):
                 print(f"[INFO] Disabled events: {disabled_events}")
 
 
+def _checkpointed_curriculum_cfg(env_cfg):
+    """Keep an all-stateful curriculum available for checkpoint restoration.
+
+    Evaluation normally disables curriculum updates. Stateful policies still
+    need their saved command range, so a curriculum made exclusively of terms
+    with a mandatory checkpoint contract is retained. Mixed stateful/stateless
+    configs are rejected instead of being partially restored.
+    """
+    curriculum_cfg = getattr(env_cfg, "curriculum", None)
+    if curriculum_cfg is None:
+        return None
+
+    terms = []
+    for name in dir(curriculum_cfg):
+        if name.startswith("_"):
+            continue
+        term = getattr(curriculum_cfg, name, None)
+        if term is not None and hasattr(term, "func"):
+            terms.append((name, term))
+
+    required = [(name, term) for name, term in terms if getattr(term.func, "checkpoint_state_required", False)]
+    if not required:
+        return None
+    unsupported = [name for name, term in terms if not getattr(term.func, "checkpoint_state_required", False)]
+    if unsupported:
+        raise RuntimeError(
+            f"Evaluation cannot restore a curriculum containing non-checkpointed terms: {sorted(unsupported)}."
+        )
+    return curriculum_cfg
+
+
 def load_policy(resume_path, env, agent_cfg):
     """Load policy from either TorchScript or regular checkpoint.
 
@@ -314,6 +345,7 @@ def load_policy(resume_path, env, agent_cfg):
             log_dir=None,
             device=agent_cfg.device,
             require_environment_topology_match=False,
+            freeze_environment_state_after_load=True,
         )
         ppo_runner.load(resume_path, load_optimizer=False)
 
@@ -342,9 +374,15 @@ def main():
     if args_cli.seed is not None:
         env_cfg.seed = args_cli.seed
 
+    # Preserve mandatory stateful curricula across eval(), which otherwise
+    # disables every curriculum before the checkpoint can restore its ranges.
+    checkpointed_curriculum_cfg = _checkpointed_curriculum_cfg(env_cfg)
+
     # Set the environment to evaluation mode
     if hasattr(env_cfg, "eval"):
         env_cfg.eval()
+    if checkpointed_curriculum_cfg is not None:
+        env_cfg.curriculum = checkpointed_curriculum_cfg
 
     # Load evaluation scenario config early to override episode length before env creation
     eval_config = None

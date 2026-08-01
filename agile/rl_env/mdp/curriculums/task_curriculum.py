@@ -955,6 +955,7 @@ class velocity_command_range_success(ManagerTermBase):
         self._successful_steps = 0
         self._hold_steps = int(cfg.params["hold_steps"])
         self._scale_increment = float(cfg.params["scale_increment"])
+        self._checkpoint_state_frozen = False
         self._checkpoint_contract = {
             "command_name": self.command_name,
             "start_ranges": self._normalized_ranges(self.start_ranges),
@@ -970,6 +971,10 @@ class velocity_command_range_success(ManagerTermBase):
 
     checkpoint_state_required = True
     """Require this term's mutable state to be present when resuming training."""
+
+    def freeze_checkpoint_state(self) -> None:
+        """Freeze curriculum updates after restoring a checkpoint for evaluation."""
+        self._checkpoint_state_frozen = True
 
     @staticmethod
     def _normalized_ranges(ranges: dict[str, tuple[float, float]]) -> dict[str, list[float]]:
@@ -1081,6 +1086,8 @@ class velocity_command_range_success(ManagerTermBase):
             raise ValueError("ema_alpha must be in (0, 1]")
         if hold_steps <= 0 or not 0.0 < scale_increment <= 1.0:
             raise ValueError("hold_steps must be positive and scale_increment must be in (0, 1]")
+        if self._checkpoint_state_frozen:
+            return self._scale
 
         command = env.command_manager.get_command(self.command_name)
         robot = env.scene["robot"]

@@ -101,6 +101,8 @@ def test_k1_velocity_curriculum_is_distributed_and_checkpointed() -> None:
     curriculum = _class(_tree(CURRICULUM_PATH), "velocity_command_range_success")
     source = ast.unparse(curriculum)
     assert "checkpoint_state_required = True" in source
+    assert "def freeze_checkpoint_state" in source
+    assert "if self._checkpoint_state_frozen" in source
     assert "def checkpoint_state_dict" in source
     assert "def load_checkpoint_state_dict" in source
     assert "def synchronize_checkpoint_state" in source
@@ -129,7 +131,10 @@ def test_k1_evaluation_restores_checkpoint_curriculum_without_training_topology(
     source = ast.unparse(_tree(EVAL_PATH))
     assert "ppo_runner = EnvironmentStateOnPolicyRunner" in source
     assert "require_environment_topology_match=False" in source
+    assert "freeze_environment_state_after_load=True" in source
     assert "ppo_runner.load(resume_path, load_optimizer=False)" in source
+    assert "checkpointed_curriculum_cfg = _checkpointed_curriculum_cfg(env_cfg)" in source
+    assert "env_cfg.curriculum = checkpointed_curriculum_cfg" in source
 
     restore = next(
         node

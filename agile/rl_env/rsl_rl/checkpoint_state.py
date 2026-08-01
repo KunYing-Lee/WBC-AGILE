@@ -37,6 +37,8 @@ def _required_curriculum_terms(env: Any) -> dict[str, Any]:
             raise TypeError(f"Required curriculum term '{name}' has no load_checkpoint_state_dict().")
         if not callable(getattr(term, "synchronize_checkpoint_state", None)):
             raise TypeError(f"Required curriculum term '{name}' has no synchronize_checkpoint_state().")
+        if not callable(getattr(term, "freeze_checkpoint_state", None)):
+            raise TypeError(f"Required curriculum term '{name}' has no freeze_checkpoint_state().")
         terms[name] = term
     return terms
 
@@ -68,6 +70,12 @@ def collect_environment_state(env: Any) -> dict[str, Any] | None:
             for name, term in sorted(terms.items())
         },
     }
+
+
+def freeze_environment_state(env: Any) -> None:
+    """Freeze every restored mandatory curriculum term for deterministic evaluation."""
+    for term in _required_curriculum_terms(env).values():
+        term.freeze_checkpoint_state()
 
 
 def restore_environment_state(
@@ -136,9 +144,11 @@ class EnvironmentStateOnPolicyRunner(OnPolicyRunner):
         self,
         *args: Any,
         require_environment_topology_match: bool = True,
+        freeze_environment_state_after_load: bool = False,
         **kwargs: Any,
     ):
         self._require_environment_topology_match = require_environment_topology_match
+        self._freeze_environment_state_after_load = freeze_environment_state_after_load
         super().__init__(*args, **kwargs)
         if self.is_distributed and _required_curriculum_terms(self.env):
             self.env.configure_synchronized_step_callback(
@@ -162,4 +172,6 @@ class EnvironmentStateOnPolicyRunner(OnPolicyRunner):
             payload,
             require_topology_match=self._require_environment_topology_match,
         )
+        if self._freeze_environment_state_after_load:
+            freeze_environment_state(self.env)
         return infos
