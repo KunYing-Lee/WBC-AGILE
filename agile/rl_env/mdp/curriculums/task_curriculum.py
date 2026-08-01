@@ -953,6 +953,104 @@ class velocity_command_range_success(ManagerTermBase):
         self._planar_error_ema: float | None = None
         self._yaw_error_ema: float | None = None
         self._successful_steps = 0
+        self._hold_steps = int(cfg.params["hold_steps"])
+        self._scale_increment = float(cfg.params["scale_increment"])
+        self._checkpoint_contract = {
+            "command_name": self.command_name,
+            "start_ranges": self._normalized_ranges(self.start_ranges),
+            "terminal_ranges": self._normalized_ranges(self.terminal_ranges),
+            "planar_error_threshold": float(cfg.params["planar_error_threshold"]),
+            "yaw_error_threshold": float(cfg.params["yaw_error_threshold"]),
+            "minimum_episode_age_ratio": float(cfg.params["minimum_episode_age_ratio"]),
+            "ema_alpha": float(cfg.params["ema_alpha"]),
+            "hold_steps": self._hold_steps,
+            "scale_increment": self._scale_increment,
+        }
+        self._update_ranges(env)
+
+    checkpoint_state_required = True
+    """Require this term's mutable state to be present when resuming training."""
+
+    @staticmethod
+    def _normalized_ranges(ranges: dict[str, tuple[float, float]]) -> dict[str, list[float]]:
+        return {name: [float(bounds[0]), float(bounds[1])] for name, bounds in sorted(ranges.items())}
+
+    def checkpoint_state_dict(self) -> dict[str, Any]:
+        """Return the complete state needed to continue this curriculum exactly."""
+        return {
+            "schema_version": 1,
+            "scale": self._scale,
+            "planar_error_ema": self._planar_error_ema,
+            "yaw_error_ema": self._yaw_error_ema,
+            "successful_steps": self._successful_steps,
+            "contract": self._checkpoint_contract,
+        }
+
+    def load_checkpoint_state_dict(self, state: dict[str, Any], env: ManagerBasedRLEnv) -> None:
+        """Restore a validated curriculum state and immediately apply its ranges."""
+        required = {
+            "schema_version",
+            "scale",
+            "planar_error_ema",
+            "yaw_error_ema",
+            "successful_steps",
+            "contract",
+        }
+        if set(state) != required:
+            raise ValueError(f"Invalid velocity curriculum state keys: {sorted(state)}")
+        if state["schema_version"] != 1:
+            raise ValueError(f"Unsupported velocity curriculum state schema: {state['schema_version']}")
+        if state["contract"] != self._checkpoint_contract:
+            raise ValueError("Velocity curriculum configuration differs from the checkpoint contract.")
+
+        scale = float(state["scale"])
+        planar_error_ema = state["planar_error_ema"]
+        yaw_error_ema = state["yaw_error_ema"]
+        successful_steps = int(state["successful_steps"])
+        if not math.isfinite(scale) or not 0.0 <= scale <= 1.0:
+            raise ValueError(f"Invalid velocity curriculum scale: {scale}")
+        for name, value in (("planar_error_ema", planar_error_ema), ("yaw_error_ema", yaw_error_ema)):
+            if value is not None and (not math.isfinite(float(value)) or float(value) < 0.0):
+                raise ValueError(f"Invalid {name}: {value}")
+        if successful_steps < 0:
+            raise ValueError(f"Invalid successful_steps: {successful_steps}")
+
+        self._scale = scale
+        self._planar_error_ema = None if planar_error_ema is None else float(planar_error_ema)
+        self._yaw_error_ema = None if yaw_error_ema is None else float(yaw_error_ema)
+        self._successful_steps = successful_steps
+        self._update_ranges(env)
+
+    def synchronize_checkpoint_state(self, env: ManagerBasedRLEnv) -> None:
+        """Synchronize mutable state at an aligned distributed rollout boundary."""
+        if not torch.distributed.is_available() or not torch.distributed.is_initialized():
+            return
+
+        summed = torch.tensor(
+            [
+                0.0 if self._planar_error_ema is None else self._planar_error_ema,
+                float(self._planar_error_ema is not None),
+                0.0 if self._yaw_error_ema is None else self._yaw_error_ema,
+                float(self._yaw_error_ema is not None),
+            ],
+            dtype=torch.float64,
+            device=env.device,
+        )
+        minimum = torch.tensor([float(self._successful_steps), self._scale], dtype=torch.float64, device=env.device)
+        maximum_scale = torch.tensor([self._scale], dtype=torch.float64, device=env.device)
+        torch.distributed.all_reduce(summed, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(minimum, op=torch.distributed.ReduceOp.MIN)
+        torch.distributed.all_reduce(maximum_scale, op=torch.distributed.ReduceOp.MAX)
+        if not torch.isclose(minimum[1], maximum_scale[0], atol=1.0e-12, rtol=0.0):
+            raise RuntimeError("Velocity curriculum scales diverged between distributed ranks.")
+
+        self._planar_error_ema = None if summed[1] == 0 else float((summed[0] / summed[1]).item())
+        self._yaw_error_ema = None if summed[3] == 0 else float((summed[2] / summed[3]).item())
+        self._successful_steps = int(minimum[0].item())
+        self._scale = float(minimum[1].item())
+        if self._successful_steps >= self._hold_steps and self._scale < 1.0:
+            self._scale = min(1.0, self._scale + self._scale_increment)
+            self._successful_steps = 0
         self._update_ranges(env)
 
     def _update_ranges(self, env: ManagerBasedRLEnv) -> None:
@@ -1013,7 +1111,8 @@ class velocity_command_range_success(ManagerTermBase):
         )
         self._successful_steps = self._successful_steps + 1 if successful else 0
 
-        if self._successful_steps >= hold_steps and self._scale < 1.0:
+        distributed = torch.distributed.is_available() and torch.distributed.is_initialized()
+        if not distributed and self._successful_steps >= hold_steps and self._scale < 1.0:
             self._scale = min(1.0, self._scale + scale_increment)
             self._successful_steps = 0
             self._update_ranges(env)

@@ -17,6 +17,10 @@ ROBOT_PATH = ROOT / "agile/rl_env/assets/robots/booster_k1.py"
 COMMAND_SCHEDULE_PATH = ROOT / "agile/sim2mujoco/configs/k1_command_bounds.yaml"
 AXIS_EVAL_PATH = ROOT / "agile/algorithms/evaluation/configs/k1_velocity_axes_v1.yaml"
 SEQUENCE_EVAL_PATH = ROOT / "agile/algorithms/evaluation/configs/k1_velocity_sequence_v1.yaml"
+CURRICULUM_PATH = ROOT / "agile/rl_env/mdp/curriculums/task_curriculum.py"
+CHECKPOINT_STATE_PATH = ROOT / "agile/rl_env/rsl_rl/checkpoint_state.py"
+VECENV_WRAPPER_PATH = ROOT / "agile/rl_env/rsl_rl/vecenv_wrapper.py"
+TRAIN_PATH = ROOT / "scripts/train.py"
 
 
 def _tree(path: Path) -> ast.Module:
@@ -90,6 +94,33 @@ def test_k1_velocity_command_curriculum_expands_to_full_contract() -> None:
     assert ast.unparse(entries["terminal_ranges"]) == (
         "{'lin_vel_x': K1_LIN_VEL_X_RANGE, 'lin_vel_y': K1_LIN_VEL_Y_RANGE, 'ang_vel_z': K1_ANG_VEL_Z_RANGE}"
     )
+
+
+def test_k1_velocity_curriculum_is_distributed_and_checkpointed() -> None:
+    curriculum = _class(_tree(CURRICULUM_PATH), "velocity_command_range_success")
+    source = ast.unparse(curriculum)
+    assert "checkpoint_state_required = True" in source
+    assert "def checkpoint_state_dict" in source
+    assert "def load_checkpoint_state_dict" in source
+    assert "def synchronize_checkpoint_state" in source
+    assert "torch.distributed.all_reduce(summed, op=torch.distributed.ReduceOp.SUM)" in source
+    assert "torch.distributed.all_reduce(minimum, op=torch.distributed.ReduceOp.MIN)" in source
+    assert "if not distributed and self._successful_steps >= hold_steps" in source
+    assert "self._update_ranges(env)" in source
+
+    checkpoint_runner = _class(_tree(CHECKPOINT_STATE_PATH), "EnvironmentStateOnPolicyRunner")
+    runner_source = ast.unparse(checkpoint_runner)
+    assert "collect_environment_state(self.env)" in runner_source
+    assert "restore_environment_state(self.env, payload)" in runner_source
+    assert "configure_synchronized_step_callback" in runner_source
+
+    wrapper = _class(_tree(VECENV_WRAPPER_PATH), "RslRlVecEnvWrapper")
+    wrapper_source = ast.unparse(wrapper)
+    assert "def configure_synchronized_step_callback" in wrapper_source
+    assert "self._synchronized_step_callback()" in wrapper_source
+
+    train_source = ast.unparse(_tree(TRAIN_PATH))
+    assert "runner = EnvironmentStateOnPolicyRunner" in train_source
 
 
 def test_k1_locomotion_controls_exact_leg_contract() -> None:

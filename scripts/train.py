@@ -78,8 +78,6 @@ import os
 import torch
 from datetime import datetime
 
-from rsl_rl.runners import OnPolicyRunner
-
 from isaaclab.envs import (
     DirectMARLEnv,
     DirectMARLEnvCfg,
@@ -98,6 +96,7 @@ import agile.isaaclab_extras.monkey_patches
 import agile.rl_env.tasks  # noqa: F401
 
 from agile.rl_env.rsl_rl import (  # isort: skip
+    EnvironmentStateOnPolicyRunner,
     RslRlOnPolicyRunnerCfg,
     RslRlVecEnvWrapper,
 )
@@ -208,7 +207,7 @@ def main(
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
     # create runner from rsl-rl
-    runner = OnPolicyRunner(
+    runner = EnvironmentStateOnPolicyRunner(
         env,
         agent_cfg.to_dict(),
         log_dir=log_dir,

@@ -19,6 +19,8 @@
 # limitations under the License.
 
 
+from collections.abc import Callable
+
 import gymnasium as gym
 import torch
 from rsl_rl.env import VecEnv
@@ -70,6 +72,9 @@ class RslRlVecEnvWrapper(VecEnv):
         # initialize the wrapper
         self.env = env
         self.clip_actions = clip_actions
+        self._synchronized_step_interval: int | None = None
+        self._synchronized_step_callback: Callable[[], None] | None = None
+        self._steps_since_synchronized_callback = 0
 
         # store information required by wrapper
         self.num_envs = self.unwrapped.num_envs
@@ -210,8 +215,22 @@ class RslRlVecEnvWrapper(VecEnv):
         if self._termination_handling:
             self._compute_termination_sigmas(extras)
 
+        if self._synchronized_step_callback is not None:
+            self._steps_since_synchronized_callback += 1
+            if self._steps_since_synchronized_callback == self._synchronized_step_interval:
+                self._synchronized_step_callback()
+                self._steps_since_synchronized_callback = 0
+
         # return the step information
         return obs, rew, dones, extras
+
+    def configure_synchronized_step_callback(self, interval: int, callback: Callable[[], None]) -> None:
+        """Register a callback at a step boundary shared by every distributed rank."""
+        if interval <= 0:
+            raise ValueError("Synchronized step callback interval must be positive.")
+        self._synchronized_step_interval = interval
+        self._synchronized_step_callback = callback
+        self._steps_since_synchronized_callback = 0
 
     def close(self):  # noqa: D102
         return self.env.close()

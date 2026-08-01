@@ -26,6 +26,7 @@ The following example shows how to wrap an environment for RSL-RL:
 
 """
 
+from .checkpoint_state import EnvironmentStateOnPolicyRunner
 from .exporter import export_policy_as_jit, export_policy_as_onnx
 from .l2c2_cfg import RslRlL2C2Cfg
 from .reward_normalization_cfg import RslRlRewardNormalizationCfg
@@ -45,6 +46,7 @@ from .vecenv_wrapper import RslRlVecEnvWrapper
 __all__ = [
     "export_policy_as_jit",
     "export_policy_as_onnx",
+    "EnvironmentStateOnPolicyRunner",
     "RslRlOnPolicyRunnerCfg",
     "RslRlPpoActorCriticCfg",
     "RslRlPpoAlgorithmCfg",
