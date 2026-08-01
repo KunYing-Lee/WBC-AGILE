@@ -70,8 +70,19 @@ def collect_environment_state(env: Any) -> dict[str, Any] | None:
     }
 
 
-def restore_environment_state(env: Any, payload: dict[str, Any] | None) -> None:
-    """Restore required curriculum state, rejecting incomplete or incompatible payloads."""
+def restore_environment_state(
+    env: Any,
+    payload: dict[str, Any] | None,
+    *,
+    require_topology_match: bool = True,
+) -> None:
+    """Restore required curriculum state, rejecting incomplete or incompatible payloads.
+
+    Training resume requires the original distributed topology because optimizer
+    continuation must be exact. Evaluation deliberately uses a different number
+    of environments, but still validates the saved topology contract before
+    restoring the checkpoint's curriculum ranges and mutable state.
+    """
     terms = _required_curriculum_terms(env)
     if not terms:
         return
@@ -82,13 +93,24 @@ def restore_environment_state(env: Any, payload: dict[str, Any] | None) -> None:
         or payload["schema_version"] != _SCHEMA_VERSION
     ):
         raise RuntimeError("Checkpoint environment_state schema is missing or unsupported.")
+    saved_contract = payload["contract"]
+    if (
+        not isinstance(saved_contract, dict)
+        or set(saved_contract) != {"distributed_world_size", "environments_per_rank"}
+        or not isinstance(saved_contract["distributed_world_size"], int)
+        or not isinstance(saved_contract["environments_per_rank"], int)
+        or saved_contract["distributed_world_size"] <= 0
+        or saved_contract["environments_per_rank"] <= 0
+    ):
+        raise RuntimeError(f"Checkpoint environment contract is invalid: {saved_contract}.")
+
     expected_contract = {
         "distributed_world_size": _distributed_world_size(),
         "environments_per_rank": int(env.num_envs),
     }
-    if payload["contract"] != expected_contract:
+    if require_topology_match and saved_contract != expected_contract:
         raise RuntimeError(
-            f"Checkpoint environment contract {payload['contract']} does not match current {expected_contract}."
+            f"Checkpoint environment contract {saved_contract} does not match current {expected_contract}."
         )
 
     saved_terms = payload["curriculum_terms"]
@@ -110,7 +132,13 @@ def restore_environment_state(env: Any, payload: dict[str, Any] | None) -> None:
 class EnvironmentStateOnPolicyRunner(OnPolicyRunner):
     """OnPolicyRunner that checkpoints all mandatory mutable environment state."""
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(
+        self,
+        *args: Any,
+        require_environment_topology_match: bool = True,
+        **kwargs: Any,
+    ):
+        self._require_environment_topology_match = require_environment_topology_match
         super().__init__(*args, **kwargs)
         if self.is_distributed and _required_curriculum_terms(self.env):
             self.env.configure_synchronized_step_callback(
@@ -129,5 +157,9 @@ class EnvironmentStateOnPolicyRunner(OnPolicyRunner):
     def load(self, path: str, load_optimizer: bool = True) -> dict[str, Any] | None:
         infos = super().load(path, load_optimizer=load_optimizer)
         payload = infos.get(_ENVIRONMENT_STATE_KEY) if isinstance(infos, dict) else None
-        restore_environment_state(self.env, payload)
+        restore_environment_state(
+            self.env,
+            payload,
+            require_topology_match=self._require_environment_topology_match,
+        )
         return infos

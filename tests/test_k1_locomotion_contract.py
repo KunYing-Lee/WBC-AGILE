@@ -21,6 +21,7 @@ CURRICULUM_PATH = ROOT / "agile/rl_env/mdp/curriculums/task_curriculum.py"
 CHECKPOINT_STATE_PATH = ROOT / "agile/rl_env/rsl_rl/checkpoint_state.py"
 VECENV_WRAPPER_PATH = ROOT / "agile/rl_env/rsl_rl/vecenv_wrapper.py"
 TRAIN_PATH = ROOT / "scripts/train.py"
+EVAL_PATH = ROOT / "scripts/eval.py"
 
 
 def _tree(path: Path) -> ast.Module:
@@ -111,7 +112,8 @@ def test_k1_velocity_curriculum_is_distributed_and_checkpointed() -> None:
     checkpoint_runner = _class(_tree(CHECKPOINT_STATE_PATH), "EnvironmentStateOnPolicyRunner")
     runner_source = ast.unparse(checkpoint_runner)
     assert "collect_environment_state(self.env)" in runner_source
-    assert "restore_environment_state(self.env, payload)" in runner_source
+    assert "restore_environment_state(" in runner_source
+    assert "require_topology_match=self._require_environment_topology_match" in runner_source
     assert "configure_synchronized_step_callback" in runner_source
 
     wrapper = _class(_tree(VECENV_WRAPPER_PATH), "RslRlVecEnvWrapper")
@@ -121,6 +123,22 @@ def test_k1_velocity_curriculum_is_distributed_and_checkpointed() -> None:
 
     train_source = ast.unparse(_tree(TRAIN_PATH))
     assert "runner = EnvironmentStateOnPolicyRunner" in train_source
+
+
+def test_k1_evaluation_restores_checkpoint_curriculum_without_training_topology() -> None:
+    source = ast.unparse(_tree(EVAL_PATH))
+    assert "ppo_runner = EnvironmentStateOnPolicyRunner" in source
+    assert "require_environment_topology_match=False" in source
+    assert "ppo_runner.load(resume_path, load_optimizer=False)" in source
+
+    restore = next(
+        node
+        for node in _tree(CHECKPOINT_STATE_PATH).body
+        if isinstance(node, ast.FunctionDef) and node.name == "restore_environment_state"
+    )
+    restore_source = ast.unparse(restore)
+    assert "require_topology_match: bool=True" in restore_source
+    assert "if require_topology_match and saved_contract != expected_contract" in restore_source
 
 
 def test_k1_locomotion_controls_exact_leg_contract() -> None:

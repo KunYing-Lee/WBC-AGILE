@@ -175,9 +175,8 @@ from isaaclab_tasks.utils import get_checkpoint_path, parse_env_cfg
 
 import agile.rl_env.tasks  # noqa: F401
 import agile.isaaclab_extras.monkey_patches
-from rsl_rl.runners import OnPolicyRunner
 from agile.algorithms.evaluation.evaluator import PolicyEvaluator
-from agile.rl_env.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
+from agile.rl_env.rsl_rl import EnvironmentStateOnPolicyRunner, RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
 from agile.rl_env.rsl_rl import export_policy_as_jit, export_policy_as_onnx
 
 
@@ -304,16 +303,19 @@ def load_policy(resume_path, env, agent_cfg):
         # Not a valid TorchScript file, try regular checkpoint
         print(f"[INFO] Not a TorchScript file (error: {type(e).__name__}), loading as regular checkpoint...")
 
-    # Load as regular checkpoint through OnPolicyRunner
+    # Load regular checkpoints through the state-aware runner. Evaluation uses
+    # a deliberately different topology, but must restore the checkpoint's
+    # curriculum ranges and reject missing or incompatible state.
     try:
         print(f"[INFO] Loading model checkpoint from: {resume_path}")
-        ppo_runner = OnPolicyRunner(
+        ppo_runner = EnvironmentStateOnPolicyRunner(
             env,
             agent_cfg.to_dict(),
             log_dir=None,
             device=agent_cfg.device,
+            require_environment_topology_match=False,
         )
-        ppo_runner.load(resume_path)
+        ppo_runner.load(resume_path, load_optimizer=False)
 
         # Obtain the trained policy for inference
         policy = ppo_runner.get_inference_policy(device=device)
