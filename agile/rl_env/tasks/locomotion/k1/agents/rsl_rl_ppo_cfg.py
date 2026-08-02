@@ -125,4 +125,25 @@ class K1VelocityStrideBalancedFinetunePpoRunnerCfg(K1VelocityStrideFinetunePpoRu
     # five learning epochs and four mini-batches, 2,000 optimizer steps equal
     # 100 on-policy iterations of critic-only fitting; the PPO implementation
     # then ramps actor losses in over the following 100 iterations.
-    algorithm = K1VelocityStrideFinetunePpoRunnerCfg.algorithm.replace(critic_warmup_steps=2_000)
+    algorithm = RslRlPpoAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.001,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=3.0e-4,
+        schedule="adaptive",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+        critic_warmup_steps=2_000,
+        reference_policy_kl_coef=0.1,
+        reference_policy_kl_cvar_fraction=1.0,
+        symmetry_cfg=RslRlSymmetryCfg(
+            use_data_augmentation=True,
+            use_mirror_loss=False,
+            data_augmentation_func=lr_mirror_K1,
+        ),
+    )
