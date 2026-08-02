@@ -57,6 +57,7 @@ class PPO:
         desired_kl=0.01,
         device="cpu",
         critic_warmup_steps=0,
+        critic_warmup_transition_learning_rate=1e-5,
         normalize_advantage_per_mini_batch=False,
         # RND parameters
         rnd_cfg: dict | None = None,
@@ -170,7 +171,12 @@ class PPO:
         self.reference_policy = None
 
         # Critic warmup
+        if critic_warmup_steps < 0:
+            raise ValueError("Critic warmup steps must be non-negative.")
+        if critic_warmup_transition_learning_rate <= 0.0:
+            raise ValueError("Critic warmup transition learning rate must be positive.")
         self.critic_warmup_steps = critic_warmup_steps
+        self.critic_warmup_transition_learning_rate = critic_warmup_transition_learning_rate
         self.update_counter = 0
 
     def init_storage(
@@ -479,7 +485,7 @@ class PPO:
                 self.update_counter += 1
             elif self.update_counter < 2 * self.critic_warmup_steps:
                 # During transition, slowly introduce other losses
-                self.learning_rate = 1e-5  # reset the lr to a small initial value
+                self.learning_rate = self.critic_warmup_transition_learning_rate
                 scale = (self.update_counter - self.critic_warmup_steps) / self.critic_warmup_steps
                 loss = (
                     self.value_loss_coef * value_loss

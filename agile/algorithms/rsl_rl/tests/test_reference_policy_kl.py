@@ -60,6 +60,24 @@ class TestReferencePolicyKl(unittest.TestCase):
                     reference_policy_kl_cvar_fraction=fraction,
                 )
 
+    def test_critic_warmup_transition_learning_rate_is_configurable_and_validated(self) -> None:
+        algorithm = PPO(
+            self.policy,
+            schedule="fixed",
+            critic_warmup_steps=20,
+            critic_warmup_transition_learning_rate=1.0e-6,
+        )
+        self.assertEqual(algorithm.critic_warmup_steps, 20)
+        self.assertEqual(algorithm.critic_warmup_transition_learning_rate, 1.0e-6)
+
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            PPO(
+                self.policy,
+                schedule="fixed",
+                critic_warmup_steps=20,
+                critic_warmup_transition_learning_rate=0.0,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

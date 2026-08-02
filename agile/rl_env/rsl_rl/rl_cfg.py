@@ -145,6 +145,9 @@ class RslRlPpoAlgorithmCfg:
     critic_warmup_steps: int = 0
     """Number of steps to warmup the critic"""
 
+    critic_warmup_transition_learning_rate: float = 1.0e-5
+    """Learning rate used while actor losses are ramped in after critic-only warmup."""
+
     l2c2_cfg: RslRlL2C2Cfg | None = None
     """The configuration for L2C2 regularization. Default is None, in which case L2C2 is not used."""
 
