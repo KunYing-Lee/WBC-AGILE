@@ -120,3 +120,9 @@ class K1VelocityStrideBalancedFinetunePpoRunnerCfg(K1VelocityStrideFinetunePpoRu
 
     experiment_name = "velocity_k1_stride_balanced_finetune"
     run_name = "model5750_stride_balanced_v2"
+
+    # Actor-only warm starts intentionally discard the parent's critic. With
+    # five learning epochs and four mini-batches, 2,000 optimizer steps equal
+    # 100 on-policy iterations of critic-only fitting; the PPO implementation
+    # then ramps actor losses in over the following 100 iterations.
+    algorithm = K1VelocityStrideFinetunePpoRunnerCfg.algorithm.replace(critic_warmup_steps=2_000)

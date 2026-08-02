@@ -346,6 +346,7 @@ def test_balanced_stride_finetune_uses_normalized_command_conditioned_swing_targ
     assert "K1VelocityStrideFinetunePpoRunnerCfg" in ast.unparse(runner.bases)
     runner_source = ast.unparse(runner)
     assert "experiment_name = 'velocity_k1_stride_balanced_finetune'" in runner_source
+    assert "critic_warmup_steps=2000" in runner_source
 
 
 def test_actor_only_warm_start_is_sha_checked_and_reinitializes_training_state() -> None:
