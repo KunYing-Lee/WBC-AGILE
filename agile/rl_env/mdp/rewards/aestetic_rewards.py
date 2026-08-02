@@ -1251,6 +1251,53 @@ def feet_air_time_thresholded_command(
     return reward * is_active_command
 
 
+def feet_swing_time_target_error_command(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    command_slice: slice,
+    command_scales: tuple[float, ...],
+    target_swing_time_min: float,
+    target_swing_time_max: float,
+    sensor_cfg: SceneEntityCfg,
+    command_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Penalize touchdown swing-time error using an axis-balanced command target.
+
+    Command components are normalized by their runtime-contract limits before
+    their magnitude is computed. Equal relative commands along forward,
+    lateral, and yaw axes therefore receive the same target instead of being
+    biased by their different physical units. The target decreases smoothly
+    from ``target_swing_time_max`` to ``target_swing_time_min`` as normalized
+    command intensity grows from zero to one.
+
+    The error is evaluated only on first contact. This directly supervises gait
+    cadence without rewarding a foot for remaining airborne indefinitely or
+    changing the commanded velocity-tracking objective.
+    """
+    command = env.command_manager.get_command(command_name)[:, command_slice]
+    if len(command_scales) != command.shape[1]:
+        raise ValueError(
+            f"command_scales has {len(command_scales)} entries, expected {command.shape[1]} for {command_name}."
+        )
+    if any(scale <= 0.0 for scale in command_scales):
+        raise ValueError("command_scales must contain only positive values.")
+    if not 0.0 < target_swing_time_min <= target_swing_time_max:
+        raise ValueError("target swing times must satisfy 0 < min <= max.")
+
+    normalized_command = command / command.new_tensor(command_scales)
+    command_intensity = torch.linalg.vector_norm(normalized_command, dim=1).clamp(max=1.0)
+    target_swing_time = target_swing_time_max - (
+        target_swing_time_max - target_swing_time_min
+    ) * command_intensity
+
+    contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+    first_contact = contact_sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids]
+    last_air_time = contact_sensor.data.last_air_time[:, sensor_cfg.body_ids]
+    touchdown_error = torch.abs(last_air_time - target_swing_time.unsqueeze(1)) * first_contact
+    is_active_command = torch.linalg.vector_norm(command, dim=1) > command_threshold
+    return torch.sum(touchdown_error, dim=1) * is_active_command
+
+
 def joint_deviation_if_standing(
     env: ManagerBasedRLEnv,
     standing_height_threshold: float,

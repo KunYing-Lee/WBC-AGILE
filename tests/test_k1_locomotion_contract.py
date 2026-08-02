@@ -311,6 +311,43 @@ def test_thresholded_air_time_penalizes_short_touchdowns_without_dense_hold_rewa
     assert "torch.norm(env.command_manager.get_command(command_name)[:, command_slice], dim=1)" in source
 
 
+def test_balanced_stride_finetune_uses_normalized_command_conditioned_swing_target() -> None:
+    tree = _tree(TASK_PATH)
+    env = _class(tree, "K1LowerVelocityStrideBalancedFinetuneEnvCfg")
+    source = ast.unparse(env)
+    assert "K1LowerVelocityStrideFinetuneEnvCfg" in ast.unparse(env.bases)
+    assert "func=mdp.feet_swing_time_target_error_command" in source
+    assert "weight=-2.0" in source
+    assert "'command_scales': (1.5, 1.5, 2.0)" in source
+    assert "'target_swing_time_min': 0.08" in source
+    assert "'target_swing_time_max': 0.16" in source
+
+    reward_function = next(
+        node
+        for node in _tree(REWARDS_PATH).body
+        if isinstance(node, ast.FunctionDef) and node.name == "feet_swing_time_target_error_command"
+    )
+    reward_source = ast.unparse(reward_function)
+    assert "normalized_command = command / command.new_tensor(command_scales)" in reward_source
+    assert "torch.linalg.vector_norm(normalized_command, dim=1).clamp(max=1.0)" in reward_source
+    assert "torch.abs(last_air_time - target_swing_time.unsqueeze(1)) * first_contact" in reward_source
+    assert "return torch.sum(touchdown_error, dim=1) * is_active_command" in reward_source
+
+    registrations = [
+        call
+        for call in ast.walk(_tree(REGISTER_PATH))
+        if isinstance(call, ast.Call)
+        and ast.unparse(call.func) == "gym.register"
+        and ast.literal_eval(_keyword(call, "id")) == "Velocity-K1-Stride-Balanced-Finetune-v0"
+    ]
+    assert len(registrations) == 1
+
+    runner = _class(_tree(PPO_CFG_PATH), "K1VelocityStrideBalancedFinetunePpoRunnerCfg")
+    assert "K1VelocityStrideFinetunePpoRunnerCfg" in ast.unparse(runner.bases)
+    runner_source = ast.unparse(runner)
+    assert "experiment_name = 'velocity_k1_stride_balanced_finetune'" in runner_source
+
+
 def test_actor_only_warm_start_is_sha_checked_and_reinitializes_training_state() -> None:
     runner = _class(_tree(CHECKPOINT_STATE_PATH), "EnvironmentStateOnPolicyRunner")
     method = next(node for node in runner.body if isinstance(node, ast.FunctionDef) and node.name == "load_actor_only")

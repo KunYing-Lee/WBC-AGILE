@@ -112,3 +112,11 @@ class K1VelocityStrideFinetunePpoRunnerCfg(RslRlOnPolicyRunnerCfg):
             data_augmentation_func=lr_mirror_K1,
         ),
     )
+
+
+@configclass
+class K1VelocityStrideBalancedFinetunePpoRunnerCfg(K1VelocityStrideFinetunePpoRunnerCfg):
+    """Direction-balanced successor to the fixed-threshold stride finetune."""
+
+    experiment_name = "velocity_k1_stride_balanced_finetune"
+    run_name = "model5750_stride_balanced_v2"

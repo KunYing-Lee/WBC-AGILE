@@ -805,3 +805,29 @@ class K1LowerVelocityStrideFinetuneEnvCfg(K1LowerVelocityEnvCfg):
                 "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*foot_link.*"),
             },
         )
+
+
+@configclass
+class K1LowerVelocityStrideBalancedFinetuneEnvCfg(K1LowerVelocityStrideFinetuneEnvCfg):
+    """Direction-balanced stride finetune with command-conditioned cadence."""
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # Normalize each command component by the public K1 command contract so
+        # equal relative forward, lateral, and yaw commands share a target.
+        # At the 0.5 m/s axis gate this yields 0.133 s: the parent's forward
+        # swing is preserved while short lateral swings receive a clear error.
+        self.rewards.feet_air_time = RewTerm(
+            func=mdp.feet_swing_time_target_error_command,
+            weight=-2.0,
+            params={
+                "command_name": "base_velocity",
+                "command_slice": slice(0, 3),
+                "command_scales": (1.5, 1.5, 2.0),
+                "target_swing_time_min": 0.08,
+                "target_swing_time_max": 0.16,
+                "command_threshold": 0.1,
+                "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*foot_link.*"),
+            },
+        )
